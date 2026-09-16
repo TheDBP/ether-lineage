@@ -1,0 +1,7 @@
+# Pinned rom-forge commit vendored into forge/. Written by forge/tools/sync-forge.sh.
+# Update with: ./forge/tools/sync-forge.sh [ref]
+url=https://github.com/TheDBP/rom-forge.git
+ref=main
+commit=81680d294027253daf35151718dee93bd0f27287
+subject=rom-forge: LineageOS build engine
+synced=2026-09-16T17:46:32Z

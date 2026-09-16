@@ -1,0 +1,113 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 14:01:00 -0400
+Subject: [PATCH] ether: carrier config for T-Mobile US, and a WPA supplicant
+ the WCNSS firmware can finish
+
+The framework-side IMS switches (VoLTE / VT / Wi-Fi calling) are turned on
+through a carrier overlay scoped to MCC/MNC 310/260, so no other carrier is
+touched. This is only half of VoLTE: the stock Nextbit blobs ship no
+ImsService (no org.codeaurora.ims, no ims*daemon, no lib-ims*), so these
+flags are inert until one is ported. Kept so that the day a stack exists the
+framework is already configured.
+
+PMF (protected management frames) is disabled in the supplicant overlay. The WCNSS
+firmware on this device negotiates it and then cannot complete the WPA 4-way
+handshake, so wifi associates and immediately drops.
+---
+ .../res/res/values-mcc310-mnc260/config.xml   | 18 ++++++++++++++
+ .../apps/CarrierConfig/res/xml/vendor.xml     | 24 +++++++++++++++++++
+ wifi/wpa_supplicant_overlay.conf              | 24 +++++++++++++++++++
+ 3 files changed, 66 insertions(+)
+ create mode 100644 overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+ create mode 100644 overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
+
+diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+new file mode 100644
+index 0000000..cbb6857
+--- /dev/null
++++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- T-Mobile US (MCC 310 / MNC 260, includes Mint Mobile) VoLTE / VT / Wi-Fi-Calling.
++     Android applies this values-mcc310-mnc260 overlay ONLY when a 310/260 SIM is present,
++     so it is inherently scoped to T-Mobile's network — no other carrier is touched.
++
++     config_device_volte_available is the resource ImsManager.isVolteEnabledByPlatform()
++     actually reads. The old carrier-agnostic patch set config_carrier_volte_available, which
++     that path ignores, so it only ever worked via the persist.dbg global override (dropped
++     here). Paired with the T-Mobile-filtered CarrierConfig bundle in the CarrierConfig overlay. -->
++<resources>
++    <bool name="config_device_volte_available">true</bool>
++    <bool name="config_device_vt_available">true</bool>
++    <bool name="config_device_wfc_ims_available">true</bool>
++    <!-- legacy leg some code paths still consult -->
++    <bool name="config_carrier_volte_available">true</bool>
++    <!-- displayed RAT during a VoLTE call; 3 = UMTS, T-Mobile's value -->
++    <integer name="config_volte_replacement_rat">3</integer>
++</resources>
+diff --git a/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml b/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
+new file mode 100644
+index 0000000..cc1f91b
+--- /dev/null
++++ b/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
+@@ -0,0 +1,24 @@
++<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
++<!-- CarrierConfig overlay: enable VoLTE / VT / Wi-Fi Calling for T-Mobile US ONLY
++     (MCC 310 / MNC 260, includes Mint Mobile). The mcc+mnc filter scopes this bundle to that
++     network; every other carrier keeps its AOSP/assets defaults (the stock vendor.xml was an
++     empty <carrier_config_list/>). This is the authoritative A11 availability leg:
++     carrier_volte_available_bool is ANDed with config_device_volte_available in ImsManager.
++     Whether IMS actually registers is then up to the network — T-Mobile also gates IMS behind
++     a device whitelist, so this may still no-op on ether. Add more T-Mobile MNCs as sibling
++     <carrier_config> blocks if a SIM reports something other than 310/260. -->
++<carrier_config_list>
++    <carrier_config mcc="310" mnc="260">
++        <boolean name="carrier_volte_available_bool" value="true" />
++        <boolean name="carrier_vt_available_bool" value="true" />
++        <boolean name="carrier_wfc_ims_available_bool" value="true" />
++        <boolean name="enhanced_4g_lte_on_by_default_bool" value="true" />
++        <boolean name="editable_enhanced_4g_lte_bool" value="true" />
++        <boolean name="editable_wfc_mode_bool" value="true" />
++        <boolean name="carrier_volte_provisioning_required_bool" value="false" />
++        <boolean name="carrier_ims_gba_required_bool" value="false" />
++        <boolean name="carrier_volte_override_wfc_provisioning_bool" value="true" />
++        <int name="carrier_default_wfc_ims_mode_int" value="1" />
++        <int name="carrier_default_wfc_ims_roaming_mode_int" value="1" />
++    </carrier_config>
++</carrier_config_list>
+diff --git a/wifi/wpa_supplicant_overlay.conf b/wifi/wpa_supplicant_overlay.conf
+index d6ae451..902c6a1 100644
+--- a/wifi/wpa_supplicant_overlay.conf
++++ b/wifi/wpa_supplicant_overlay.conf
+@@ -4,3 +4,27 @@ tdls_external_control=1
+ bss_max_count=512
+ bss_no_flush_when_down=1
+ driver_param=use_p2p_group_interface=1
++
++# Disable 802.11w / PMF (Protected Management Frames).
++#
++# WiFi associates but the WPA 4-way handshake never completes on 20.0:
++#
++#   SupplicantStaNetworkHalAidlImpl:  RequirePmf: false
++#   wpa_supplicant: wlan0: WPA: Selected AP supports MFP: require MFP
++#   wpa_supplicant: wlan0: Authentication with <bssid> timed out.
++#   wpa_supplicant: wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
++#   wpa_supplicant: wlan0: State: 4WAY_HANDSHAKE -> DISCONNECTED
++#
++# The framework asks for RequirePmf=false, but the AOSP template sets a global
++# pmf=1 (MFP optional) and wpa_supplicant upgrades that to *required* whenever
++# the AP advertises MFP capability. The prima/qcacld driver on msm8992 does not
++# handle PMF, so msg 3/4 never arrives and the handshake times out. The
++# "pre-shared key may be incorrect" line is wpa_supplicant's generic timeout
++# message, not an actual key mismatch -- it failed against a phone hotspot too.
++#
++# 19.1 ships the same pmf=1 template and works, because it used the HIDL
++# supplicant HAL; 20.0 uses AIDL (new in A13), where RequirePmf=false does not
++# reach the network block as ieee80211w=0.
++#
++# Cost: no WPA3-SAE, which requires PMF. This driver cannot do WPA3 anyway.
++pmf=0
+-- 
+2.53.0
+
