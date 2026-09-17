@@ -153,15 +153,19 @@ Full account in **[PORT-LOG.md](PORT-LOG.md)**.
 
 ## Installing
 
-Prebuilt images are on the [Releases](https://github.com/TheDBP/ether-lineage/releases) page —
-always the `libre` preset: LineageOS plus F-Droid, Firefox, K-9 Mail, KDE Connect, TermOne Plus and
-the Nextcloud bundle (Files, Talk, NextPush, Deck, NC Passwords, Notes, DAVx5, Tasks), no Google
-apps, not rooted, none of Nextbit's own artwork. The Robin was sold as the cloud-first phone; this
-is that, pointed at a server you own.
+Prebuilt images are on the [Releases](https://github.com/TheDBP/ether-lineage/releases) page, as
+the `libre` preset and, from the same build, `clean`:
+
+- `libre` — LineageOS plus F-Droid, Firefox, K-9 Mail, KDE Connect, TermOne Plus and the Nextcloud
+  bundle (Files, Talk, NextPush, Deck, NC Passwords, Notes, DAVx5, Tasks). The Robin was sold as
+  the cloud-first phone; this is that, pointed at a server you own.
+- `clean` — LineageOS with only the shared defaults, nothing bundled.
+
+Neither has Google apps, root, or any of Nextbit's own artwork.
 
 You need: a Robin on stock Nougat (`Robin_Nougat_108` or later) or on LineageOS 18.1 — both
 tested; other starting points untested — and `adb` and `fastboot` from Android platform-tools. Each
-release is two files: the ROM zip and a `<name>-recovery.img` (Lineage recovery from the same build)
+preset is two files: the ROM zip and a `<name>-recovery.img` (Lineage recovery from the same build)
 — no TWRP. Everything on the phone is erased.
 
 1. **Unlock the bootloader** (skip if already unlocked). Settings → About → tap *Build number* five
@@ -171,8 +175,8 @@ release is two files: the ROM zip and a `<name>-recovery.img` (Lineage recovery 
 2. **Flash and boot the recovery.** Back in the bootloader (`adb reboot bootloader`, or hold
    Volume Down while powering on):
    `fastboot flash recovery lineage-20.0-<date>-UNOFFICIAL-turbo-libre-ether-recovery.img`, then
-   `fastboot boot lineage-20.0-<date>-UNOFFICIAL-turbo-libre-ether-recovery.img`. (This
-   bootloader ignores `fastboot reboot recovery` and boots the system; boot the image directly.)
+   `fastboot boot lineage-20.0-<date>-UNOFFICIAL-turbo-libre-ether-recovery.img` (the
+   `turbo-clean` one for that preset). (This bootloader ignores `fastboot reboot recovery` and boots the system; boot the image directly.)
 3. **Factory reset.** *Factory reset → Format data / factory reset*. Required coming from stock or
    another ROM, and again on any update that changes signing keys.
 4. **Sideload the ROM.** *Apply update → Apply from ADB*, then on the computer
