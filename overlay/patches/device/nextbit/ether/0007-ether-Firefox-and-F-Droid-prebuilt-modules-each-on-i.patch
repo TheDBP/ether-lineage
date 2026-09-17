@@ -1,0 +1,237 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 14:01:00 -0400
+Subject: [PATCH] ether: Firefox and F-Droid prebuilt modules, each on its own
+ switch
+
+Both are prebuilt APK modules in the device tree, and both are gated twice: on the
+forge option that fetches the APK, and on the APK actually being present.
+
+Both gates are needed. Without the option gate, an APK left behind in an
+un-refreshed device tree puts the app into a build that never asked for it -- that is
+how the clean preset shipped F-Droid. Without the wildcard, naming a module whose APK
+was never fetched fails the whole build before compiling anything:
+
+  lineage_ether.mk includes non-existent modules in PRODUCT_PACKAGES
+  Offending entries: Firefox
+
+Firefox is on WITH_FIREFOX, not WITH_GAPPS. It used to sit inside the GApps block,
+which meant a Google-free build could not have Firefox at all. Its module carries
+LOCAL_OVERRIDES_PACKAGES := Jelly, so exactly one browser is ever installed and
+nothing needs to declare a default browser.
+---
+ device.mk                                     | 31 +++++++++++++++++++
+ fdroid/.gitignore                             |  3 ++
+ fdroid/Android.mk                             |  4 +++
+ fdroid/FDroid/Android.mk                      | 28 +++++++++++++++++
+ fdroid/FDroidPrivilegedExtension/Android.mk   | 27 ++++++++++++++++
+ ...rmissions-org.fdroid.fdroid.privileged.xml |  9 ++++++
+ firefox/.gitignore                            |  3 ++
+ firefox/Android.mk                            | 30 ++++++++++++++++++
+ 8 files changed, 135 insertions(+)
+ create mode 100644 fdroid/.gitignore
+ create mode 100644 fdroid/Android.mk
+ create mode 100644 fdroid/FDroid/Android.mk
+ create mode 100644 fdroid/FDroidPrivilegedExtension/Android.mk
+ create mode 100644 fdroid/permissions/privapp-permissions-org.fdroid.fdroid.privileged.xml
+ create mode 100644 firefox/.gitignore
+ create mode 100644 firefox/Android.mk
+
+diff --git a/device.mk b/device.mk
+index b70be41..d9f019d 100644
+--- a/device.mk
++++ b/device.mk
+@@ -284,6 +284,27 @@ PRODUCT_PACKAGES += \
+ PRODUCT_PACKAGES += \
+     RobinLed
+ 
++# F-Droid (open-source app store) + Privileged Extension for silent installs/updates.
++# APKs are fetched + sha256-verified (prebuilt/fetch-fdroid.sh) and placed by apply-overlay.sh.
++# Gated on the APK being present, exactly like firefox/Android.mk: with WITH_FDROID=false nothing
++# fetches it, and an unconditional PRODUCT_PACKAGES then fails at ninja time with
++#   'device/nextbit/ether/fdroid/FDroid/FDroid.apk', needed by ... missing and no known rule
++# That only stayed hidden because a stale APK survived in an un-refreshed device tree, so the
++# clean variant was never actually buildable from a clean checkout.
++# WITH_FDROID is the forge option that fetches these APKs. The wildcard below is not a
++# substitute for it: a stale APK left in an un-refreshed device tree would otherwise put
++# F-Droid into a build that never asked for it -- which is how the clean preset shipped it.
++ifeq ($(WITH_FDROID),true)
++ifneq ($(wildcard $(LOCAL_PATH)/fdroid/FDroid/FDroid.apk),)
++PRODUCT_PACKAGES += \
++    FDroid \
++    FDroidPrivilegedExtension
++
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/fdroid/permissions/privapp-permissions-org.fdroid.fdroid.privileged.xml:$(TARGET_COPY_OUT_PRODUCT)/etc/permissions/privapp-permissions-org.fdroid.fdroid.privileged.xml
++endif
++endif
++
+ # Thermal
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/configs/thermal-engine-8992.conf:$(TARGET_COPY_OUT_VENDOR)/etc/thermal-engine-8992.conf
+@@ -323,6 +344,16 @@ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/wifi/p2p_supplicant_overlay.conf:$(TARGET_COPY_OUT_VENDOR)/etc/wifi/p2p_supplicant_overlay.conf \
+     $(LOCAL_PATH)/wifi/wpa_supplicant_overlay.conf:$(TARGET_COPY_OUT_VENDOR)/etc/wifi/wpa_supplicant_overlay.conf
+ 
++# Firefox (Fennec F-Droid), gated on its OWN switch rather than on GApps. The firefox option
++# installs it and its module carries LOCAL_OVERRIDES_PACKAGES := Jelly, so exactly one browser is
++# ever present and nothing has to declare a default browser. It used to sit inside the WITH_GAPPS
++# block, which meant a non-GApps build could not have Firefox at all.
++ifeq ($(WITH_FIREFOX),true)
++ifneq ($(wildcard $(LOCAL_PATH)/firefox/Firefox.apk),)
++PRODUCT_PACKAGES += Firefox
++endif
++endif
++
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/wifi/WCNSS_cfg.dat:$(TARGET_COPY_OUT_VENDOR)/firmware/wlan/qca_cld/WCNSS_cfg.dat \
+     $(LOCAL_PATH)/wifi/WCNSS_qcom_cfg.ini:$(TARGET_COPY_OUT_VENDOR)/firmware/wlan/qca_cld/WCNSS_qcom_cfg.ini
+diff --git a/fdroid/.gitignore b/fdroid/.gitignore
+new file mode 100644
+index 0000000..12eb65e
+--- /dev/null
++++ b/fdroid/.gitignore
+@@ -0,0 +1,3 @@
++# APKs are fetched + verified by prebuilt/fetch-fdroid.sh and dropped in by apply-overlay.sh.
++FDroid/FDroid.apk
++FDroidPrivilegedExtension/FDroidPrivilegedExtension.apk
+diff --git a/fdroid/Android.mk b/fdroid/Android.mk
+new file mode 100644
+index 0000000..28549cb
+--- /dev/null
++++ b/fdroid/Android.mk
+@@ -0,0 +1,4 @@
++LOCAL_PATH := $(call my-dir)
++# Recurse into fdroid/FDroid and fdroid/FDroidPrivilegedExtension — device/nextbit/ether/Android.mk
++# only globs one level deep, so without this these nested prebuilts are silently never defined.
++include $(call all-makefiles-under,$(LOCAL_PATH))
+diff --git a/fdroid/FDroid/Android.mk b/fdroid/FDroid/Android.mk
+new file mode 100644
+index 0000000..330a3c7
+--- /dev/null
++++ b/fdroid/FDroid/Android.mk
+@@ -0,0 +1,28 @@
++LOCAL_PATH := $(call my-dir)
++
++# F-Droid client (org.fdroid.fdroid), PRESIGNED with F-Droid's release key. The APK is fetched +
++# sha256-verified by prebuilt/fetch-fdroid.sh and dropped in here by apply-overlay.sh (not vendored).
++# Defined only when the APK is present; see device.mk.
++ifneq ($(wildcard $(LOCAL_PATH)/FDroid.apk),)
++include $(CLEAR_VARS)
++LOCAL_MODULE := FDroid
++LOCAL_MODULE_TAGS := optional
++LOCAL_MODULE_CLASS := APPS
++LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
++LOCAL_BUILT_MODULE_STEM := package.apk
++LOCAL_CERTIFICATE := PRESIGNED
++# Ship the APK byte for byte. Without LOCAL_SDK_VERSION the build takes the rewriting path and
++# uncompresses the embedded libraries and dex, which invalidates the whole-file v2 signature --
++# PackageManager then rejects the package at boot scan, silently, and the app is simply absent.
++# Setting it selects do_not_alter_apk: copy, then check only. That check is softened by our
++# build/make patch, because it otherwise refuses exactly the APKs this path exists to protect.
++LOCAL_SDK_VERSION := current
++# The APK manifest declares these as uses-library required=false; the build system must agree or
++# manifest_check.py (AOSP 12+) fails the build. Preferable to RELAX_USES_LIBRARY_CHECK, which
++# disables AOT globally.
++LOCAL_OPTIONAL_USES_LIBRARIES := androidx.window.extensions androidx.window.sidecar
++LOCAL_SRC_FILES := FDroid.apk
++LOCAL_PRODUCT_MODULE := true
++LOCAL_DEX_PREOPT := false
++include $(BUILD_PREBUILT)
++endif
+diff --git a/fdroid/FDroidPrivilegedExtension/Android.mk b/fdroid/FDroidPrivilegedExtension/Android.mk
+new file mode 100644
+index 0000000..c32d215
+--- /dev/null
++++ b/fdroid/FDroidPrivilegedExtension/Android.mk
+@@ -0,0 +1,27 @@
++LOCAL_PATH := $(call my-dir)
++
++# F-Droid Privileged Extension (org.fdroid.fdroid.privileged) — a small privileged shim, signed by
++# F-Droid, that lets the F-Droid client install/update apps without the "unknown sources" prompt.
++# Purpose-built for ROM baking. PRESIGNED so the client trusts its signature; paired with the
++# privapp-permissions allowlist (../permissions/) that grants INSTALL_PACKAGES/DELETE_PACKAGES.
++# Defined only when the APK is present; see device.mk.
++ifneq ($(wildcard $(LOCAL_PATH)/FDroidPrivilegedExtension.apk),)
++include $(CLEAR_VARS)
++LOCAL_MODULE := FDroidPrivilegedExtension
++LOCAL_MODULE_TAGS := optional
++LOCAL_MODULE_CLASS := APPS
++LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
++LOCAL_BUILT_MODULE_STEM := package.apk
++LOCAL_CERTIFICATE := PRESIGNED
++# Ship the APK byte for byte. Without LOCAL_SDK_VERSION the build takes the rewriting path and
++# uncompresses the embedded libraries and dex, which invalidates the whole-file v2 signature --
++# PackageManager then rejects the package at boot scan, silently, and the app is simply absent.
++# Setting it selects do_not_alter_apk: copy, then check only. That check is softened by our
++# build/make patch, because it otherwise refuses exactly the APKs this path exists to protect.
++LOCAL_SDK_VERSION := current
++LOCAL_SRC_FILES := FDroidPrivilegedExtension.apk
++LOCAL_PRIVILEGED_MODULE := true
++LOCAL_PRODUCT_MODULE := true
++LOCAL_DEX_PREOPT := false
++include $(BUILD_PREBUILT)
++endif
+diff --git a/fdroid/permissions/privapp-permissions-org.fdroid.fdroid.privileged.xml b/fdroid/permissions/privapp-permissions-org.fdroid.fdroid.privileged.xml
+new file mode 100644
+index 0000000..cfb3500
+--- /dev/null
++++ b/fdroid/permissions/privapp-permissions-org.fdroid.fdroid.privileged.xml
+@@ -0,0 +1,9 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Privileged-permission allowlist for the F-Droid Privileged Extension so it can install and
++     remove packages on behalf of the F-Droid client. Copied to /product/etc/permissions. -->
++<permissions>
++    <privapp-permissions package="org.fdroid.fdroid.privileged">
++        <permission name="android.permission.INSTALL_PACKAGES"/>
++        <permission name="android.permission.DELETE_PACKAGES"/>
++    </privapp-permissions>
++</permissions>
+diff --git a/firefox/.gitignore b/firefox/.gitignore
+new file mode 100644
+index 0000000..218db93
+--- /dev/null
++++ b/firefox/.gitignore
+@@ -0,0 +1,3 @@
++# Firefox (Fennec F-Droid) APK, fetched by prebuilt/fetch-firefox.sh at build time. Never committed.
++Firefox.apk
++lib/
+diff --git a/firefox/Android.mk b/firefox/Android.mk
+new file mode 100644
+index 0000000..d107eed
+--- /dev/null
++++ b/firefox/Android.mk
+@@ -0,0 +1,30 @@
++LOCAL_PATH := $(call my-dir)
++# Firefox (Fennec F-Droid) prebuilt browser. APK fetched by the firefox option into this dir
++# (gitignored, never committed). Overrides Jelly. Module builds only when the APK is present.
++ifneq ($(wildcard $(LOCAL_PATH)/Firefox.apk),)
++include $(CLEAR_VARS)
++LOCAL_MODULE := Firefox
++LOCAL_MODULE_CLASS := APPS
++LOCAL_SRC_FILES := Firefox.apk
++LOCAL_CERTIFICATE := PRESIGNED
++# Ship the APK byte for byte. Without LOCAL_SDK_VERSION the build takes the rewriting path and
++# uncompresses the embedded libraries and dex, which invalidates the whole-file v2 signature --
++# PackageManager then rejects the package at boot scan, silently, and the app is simply absent.
++# Setting it selects do_not_alter_apk: copy, then check only. That check is softened by our
++# build/make patch, because it otherwise refuses exactly the APKs this path exists to protect.
++LOCAL_SDK_VERSION := current
++# APK manifests declare these as uses-library required=false; the build system must agree or
++# manifest_check.py fails the build (AOSP 12+). Declaring them keeps dexpreopt/AOT enabled, unlike
++# RELAX_USES_LIBRARY_CHECK / PRODUCT_BROKEN_VERIFY_USES_LIBRARIES.
++LOCAL_OPTIONAL_USES_LIBRARIES := androidx.window.extensions androidx.window.sidecar
++# PackageManager never extracts native libraries for a bundled system app
++# (PackageAbiHelperImpl.shouldExtractLibs) and the linker cannot dlopen a compressed entry out of
++# the APK, so fetch-firefox.sh unpacks lib/arm64-v8a/ next to it and these install as
++# <app>/lib/arm64/*.so, the first place the framework looks. Without them every launch dies in
++# UnsatisfiedLinkError on libjnidispatch.so.
++LOCAL_PREBUILT_JNI_LIBS := $(patsubst $(LOCAL_PATH)/%,%,$(wildcard $(LOCAL_PATH)/lib/arm64-v8a/*.so))
++LOCAL_MODULE_TAGS := optional
++LOCAL_PRODUCT_MODULE := true
++LOCAL_OVERRIDES_PACKAGES := Jelly
++include $(BUILD_PREBUILT)
++endif
+-- 
+2.53.0
+
