@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Tue, 15 Sep 2026 22:05:38 -0400
+Subject: [PATCH 1/2] ether: 420 dpi
+
+The Robin's 5.2-inch 1080p panel is 424 dpi; the upstream 480 renders everything a size too
+large. 420 is the nearest standard bucket (xxhdpi assets still apply).
+---
+ BoardConfig.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index aac9a3a..ac5cece 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -81,7 +81,7 @@ TARGET_VNDK_USE_CORE_VARIANT := true
+ WITH_DEXPREOPT_DEBUG_INFO := false
+ 
+ # Display
+-TARGET_SCREEN_DENSITY := 480
++TARGET_SCREEN_DENSITY := 420
+ TARGET_USES_ION := true
+ 
+ # Encryption

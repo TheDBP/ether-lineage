@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Wed, 9 Sep 2026 23:19:17 -0400
+Subject: [PATCH] Revert "Restrict USSD requests to the subscription's
+ associated user."
+
+This reverts commit 43f185c72 (AOSP Bug: 471796626), which does not build on
+lineage-20.0:
+
+  PhoneInterfaceManager.java:2932: error: cannot find symbol
+    symbol: method checkSubscriptionAssociatedWithUser(PhoneGlobals,int,UserHandle)
+    location: class TelephonyPermissions
+
+This is an upstream breakage, not a device problem. The commit was applied to
+packages/services/Telephony on lineage-20.0 without its frameworks/base
+counterpart. Verified: our frameworks/base is exactly at upstream
+lineage-20.0 HEAD and upstream itself has zero occurrences of that method,
+while lineage-21.0 and lineage-22.2 both have it. Any lineage-20.0 build hits
+this.
+
+Backporting the method instead was considered and rejected: it calls
+SubscriptionManager.isSubscriptionAssociatedWithUser(), which does not exist
+on Android 13 either, so the fix would cascade into backporting the whole
+Android 14 subscription-to-user association API.
+
+Security impact is nil here. The patch restricts USSD to a subscription's
+associated user -- a multi-user protection built on an association API that
+A13 does not have. Reverting restores the behaviour every other A13 device
+ships with.
+---
+ src/com/android/phone/PhoneInterfaceManager.java | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/src/com/android/phone/PhoneInterfaceManager.java b/src/com/android/phone/PhoneInterfaceManager.java
+index e4bea0545..48aeced2f 100755
+--- a/src/com/android/phone/PhoneInterfaceManager.java
++++ b/src/com/android/phone/PhoneInterfaceManager.java
+@@ -2929,11 +2929,6 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
+     public void handleUssdRequest(int subId, String ussdRequest, ResultReceiver wrappedCallback) {
+         enforceCallPermission();
+ 
+-        if (!TelephonyPermissions.checkSubscriptionAssociatedWithUser(
+-                mApp, subId, Binder.getCallingUserHandle())) {
+-            throw new SecurityException(
+-                    "The subscription " + subId + " is not associated " + "with the calling user");
+-        }
+         final long identity = Binder.clearCallingIdentity();
+         try {
+             if (!SubscriptionManager.isValidSubscriptionId(subId)) {
+-- 
+2.53.0
+
