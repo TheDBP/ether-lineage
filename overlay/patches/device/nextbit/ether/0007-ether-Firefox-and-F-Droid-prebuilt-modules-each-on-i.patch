@@ -20,15 +20,15 @@ which meant a Google-free build could not have Firefox at all. Its module carrie
 LOCAL_OVERRIDES_PACKAGES := Jelly, so exactly one browser is ever installed and
 nothing needs to declare a default browser.
 ---
- device.mk                                     | 31 +++++++++++++++++++
- fdroid/.gitignore                             |  3 ++
- fdroid/Android.mk                             |  4 +++
- fdroid/FDroid/Android.mk                      | 28 +++++++++++++++++
- fdroid/FDroidPrivilegedExtension/Android.mk   | 27 ++++++++++++++++
- ...rmissions-org.fdroid.fdroid.privileged.xml |  9 ++++++
- firefox/.gitignore                            |  3 ++
- firefox/Android.mk                            | 30 ++++++++++++++++++
- 8 files changed, 135 insertions(+)
+ device.mk                                     | 31 +++++++++++++++++++++++++++++++
+ fdroid/.gitignore                             |  6 ++++++
+ fdroid/Android.mk                             |  4 ++++
+ fdroid/FDroid/Android.mk                      | 34 ++++++++++++++++++++++++++++++++++
+ fdroid/FDroidPrivilegedExtension/Android.mk   | 37 +++++++++++++++++++++++++++++++++++++
+ ...rmissions-org.fdroid.fdroid.privileged.xml |  9 +++++++++
+ firefox/.gitignore                            |  3 +++
+ firefox/Android.mk                            | 30 ++++++++++++++++++++++++++++++
+ 8 files changed, 154 insertions(+)
  create mode 100644 fdroid/.gitignore
  create mode 100644 fdroid/Android.mk
  create mode 100644 fdroid/FDroid/Android.mk
@@ -46,7 +46,7 @@ index b70be41..d9f019d 100644
      RobinLed
  
 +# F-Droid (open-source app store) + Privileged Extension for silent installs/updates.
-+# APKs are fetched + sha256-verified (prebuilt/fetch-fdroid.sh) and placed by apply-overlay.sh.
++# APKs are fetched + signer-verified (prebuilt/fetch-fdroid.sh) and placed by the option's post-patch.sh.
 +# Gated on the APK being present, exactly like firefox/Android.mk: with WITH_FDROID=false nothing
 +# fetches it, and an unconditional PRODUCT_PACKAGES then fails at ninja time with
 +#   'device/nextbit/ether/fdroid/FDroid/FDroid.apk', needed by ... missing and no known rule
@@ -88,13 +88,16 @@ index b70be41..d9f019d 100644
      $(LOCAL_PATH)/wifi/WCNSS_qcom_cfg.ini:$(TARGET_COPY_OUT_VENDOR)/firmware/wlan/qca_cld/WCNSS_qcom_cfg.ini
 diff --git a/fdroid/.gitignore b/fdroid/.gitignore
 new file mode 100644
-index 0000000..12eb65e
+index 0000000..3e1ecae
 --- /dev/null
 +++ b/fdroid/.gitignore
-@@ -0,0 +1,3 @@
-+# APKs are fetched + verified by prebuilt/fetch-fdroid.sh and dropped in by apply-overlay.sh.
+@@ -0,0 +1,6 @@
++# APKs fetched + verified by prebuilt/fetch-fdroid.sh, placed here with their unpacked native
++# libraries by the fdroid option's post-patch.sh.
 +FDroid/FDroid.apk
++FDroid/lib/
 +FDroidPrivilegedExtension/FDroidPrivilegedExtension.apk
++FDroidPrivilegedExtension/lib/
 diff --git a/fdroid/Android.mk b/fdroid/Android.mk
 new file mode 100644
 index 0000000..28549cb
@@ -107,14 +110,14 @@ index 0000000..28549cb
 +include $(call all-makefiles-under,$(LOCAL_PATH))
 diff --git a/fdroid/FDroid/Android.mk b/fdroid/FDroid/Android.mk
 new file mode 100644
-index 0000000..330a3c7
+index 0000000..5712cdf
 --- /dev/null
 +++ b/fdroid/FDroid/Android.mk
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,34 @@
 +LOCAL_PATH := $(call my-dir)
 +
 +# F-Droid client (org.fdroid.fdroid), PRESIGNED with F-Droid's release key. The APK is fetched +
-+# sha256-verified by prebuilt/fetch-fdroid.sh and dropped in here by apply-overlay.sh (not vendored).
++# signer-verified by prebuilt/fetch-fdroid.sh and placed here by the option's post-patch.sh.
 +# Defined only when the APK is present; see device.mk.
 +ifneq ($(wildcard $(LOCAL_PATH)/FDroid.apk),)
 +include $(CLEAR_VARS)
@@ -130,10 +133,16 @@ index 0000000..330a3c7
 +# Setting it selects do_not_alter_apk: copy, then check only. That check is softened by our
 +# build/make patch, because it otherwise refuses exactly the APKs this path exists to protect.
 +LOCAL_SDK_VERSION := current
-+# The APK manifest declares these as uses-library required=false; the build system must agree or
-+# manifest_check.py (AOSP 12+) fails the build. Preferable to RELAX_USES_LIBRARY_CHECK, which
-+# disables AOT globally.
-+LOCAL_OPTIONAL_USES_LIBRARIES := androidx.window.extensions androidx.window.sidecar
++# The APK manifest declares uses-library entries and they move between releases; the build system
++# must agree with each or manifest_check.py (AOSP 12+) fails the build. Do not check: this is a
++# presigned APK we never rebuild, and the runtime resolves optional libraries itself.
++LOCAL_ENFORCE_USES_LIBRARIES := false
++# PackageManager never extracts native libraries for a bundled system app
++# (PackageAbiHelperImpl.shouldExtractLibs) and the linker cannot dlopen a compressed entry out of
++# the APK, so when the fetch finds them compressed it unpacks lib/arm64-v8a/ beside the APK and
++# these install as <app>/lib/arm64/*.so, the first place the framework looks. Empty when the APK
++# packs them loadable.
++LOCAL_PREBUILT_JNI_LIBS := $(patsubst $(LOCAL_PATH)/%,%,$(wildcard $(LOCAL_PATH)/lib/arm64-v8a/*.so))
 +LOCAL_SRC_FILES := FDroid.apk
 +LOCAL_PRODUCT_MODULE := true
 +LOCAL_DEX_PREOPT := false
@@ -141,10 +150,10 @@ index 0000000..330a3c7
 +endif
 diff --git a/fdroid/FDroidPrivilegedExtension/Android.mk b/fdroid/FDroidPrivilegedExtension/Android.mk
 new file mode 100644
-index 0000000..c32d215
+index 0000000..7259f3e
 --- /dev/null
 +++ b/fdroid/FDroidPrivilegedExtension/Android.mk
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,37 @@
 +LOCAL_PATH := $(call my-dir)
 +
 +# F-Droid Privileged Extension (org.fdroid.fdroid.privileged) — a small privileged shim, signed by
@@ -166,6 +175,16 @@ index 0000000..c32d215
 +# Setting it selects do_not_alter_apk: copy, then check only. That check is softened by our
 +# build/make patch, because it otherwise refuses exactly the APKs this path exists to protect.
 +LOCAL_SDK_VERSION := current
++# The APK manifest declares uses-library entries and they move between releases; the build system
++# must agree with each or manifest_check.py (AOSP 12+) fails the build. Do not check: this is a
++# presigned APK we never rebuild, and the runtime resolves optional libraries itself.
++LOCAL_ENFORCE_USES_LIBRARIES := false
++# PackageManager never extracts native libraries for a bundled system app
++# (PackageAbiHelperImpl.shouldExtractLibs) and the linker cannot dlopen a compressed entry out of
++# the APK, so when the fetch finds them compressed it unpacks lib/arm64-v8a/ beside the APK and
++# these install as <app>/lib/arm64/*.so, the first place the framework looks. Empty when the APK
++# packs them loadable.
++LOCAL_PREBUILT_JNI_LIBS := $(patsubst $(LOCAL_PATH)/%,%,$(wildcard $(LOCAL_PATH)/lib/arm64-v8a/*.so))
 +LOCAL_SRC_FILES := FDroidPrivilegedExtension.apk
 +LOCAL_PRIVILEGED_MODULE := true
 +LOCAL_PRODUCT_MODULE := true
@@ -198,7 +217,7 @@ index 0000000..218db93
 +lib/
 diff --git a/firefox/Android.mk b/firefox/Android.mk
 new file mode 100644
-index 0000000..d107eed
+index 0000000..f71de7f
 --- /dev/null
 +++ b/firefox/Android.mk
 @@ -0,0 +1,30 @@
@@ -217,15 +236,15 @@ index 0000000..d107eed
 +# Setting it selects do_not_alter_apk: copy, then check only. That check is softened by our
 +# build/make patch, because it otherwise refuses exactly the APKs this path exists to protect.
 +LOCAL_SDK_VERSION := current
-+# APK manifests declare these as uses-library required=false; the build system must agree or
-+# manifest_check.py fails the build (AOSP 12+). Declaring them keeps dexpreopt/AOT enabled, unlike
-+# RELAX_USES_LIBRARY_CHECK / PRODUCT_BROKEN_VERIFY_USES_LIBRARIES.
-+LOCAL_OPTIONAL_USES_LIBRARIES := androidx.window.extensions androidx.window.sidecar
++# The APK manifest declares uses-library entries and they move between releases; the build system
++# must agree with each or manifest_check.py (AOSP 12+) fails the build. Do not check: this is a
++# presigned APK we never rebuild, and the runtime resolves optional libraries itself.
++LOCAL_ENFORCE_USES_LIBRARIES := false
 +# PackageManager never extracts native libraries for a bundled system app
 +# (PackageAbiHelperImpl.shouldExtractLibs) and the linker cannot dlopen a compressed entry out of
-+# the APK, so fetch-firefox.sh unpacks lib/arm64-v8a/ next to it and these install as
-+# <app>/lib/arm64/*.so, the first place the framework looks. Without them every launch dies in
-+# UnsatisfiedLinkError on libjnidispatch.so.
++# the APK, so when the fetch finds them compressed it unpacks lib/arm64-v8a/ beside the APK and
++# these install as <app>/lib/arm64/*.so, the first place the framework looks. Without them every
++# launch dies in UnsatisfiedLinkError on libjnidispatch.so. Empty when the APK packs them loadable.
 +LOCAL_PREBUILT_JNI_LIBS := $(patsubst $(LOCAL_PATH)/%,%,$(wildcard $(LOCAL_PATH)/lib/arm64-v8a/*.so))
 +LOCAL_MODULE_TAGS := optional
 +LOCAL_PRODUCT_MODULE := true
