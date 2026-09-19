@@ -88,7 +88,7 @@ Beyond the tuning, this build restores or adds:
   frame repeated in bands. Preview was always correct, which is what made it look like a working
   camera.
 - **adb over USB**, on a kernel with no FunctionFS AIO — which is otherwise impossible.
-- **Firefox, F-Droid and K-9 Mail**, each on its own switch; and **the Nextcloud bundle** — Files,
+- **Fulguris, F-Droid and K-9 Mail**, each on its own switch; and **the Nextcloud bundle** — Files,
   Talk, push, Deck, Passwords, Notes, CalDAV/CardDAV and Tasks — for the phone that was sold on
   living in the cloud.
 - **The Robin's look** — the Nextbit teal (#009D94) as the system accent, seeded as a Monet preset
@@ -156,7 +156,8 @@ Full account in **[PORT-LOG.md](PORT-LOG.md)**.
 Prebuilt images are on the [Releases](https://github.com/TheDBP/ether-lineage/releases) page, as
 the `libre` preset and, from the same build, `clean`:
 
-- `libre` — LineageOS plus F-Droid, Firefox, K-9 Mail, KDE Connect, TermOne Plus and the Nextcloud
+- `libre` — LineageOS plus F-Droid, Fulguris, K-9 Mail, KDE Connect, TermOne Plus, ConnectBot,
+  Linphone and the Nextcloud
   bundle (Files, Talk, NextPush, Deck, NC Passwords, Notes, DAVx5, Tasks). The Robin was sold as
   the cloud-first phone; this is that, pointed at a server you own.
 - `clean` — LineageOS with only the shared defaults, nothing bundled.
@@ -198,8 +199,8 @@ One command, one image. Start with `clean` — it needs no inputs beyond the sou
 
 ```sh
 PRESET=clean ./forge/bootstrap.sh    # plain LineageOS + the tuning, nothing proprietary
-PRESET=libre ./forge/bootstrap.sh    # + F-Droid, Firefox, K-9 and the Nextcloud bundle, still no Google
-PRESET=full  ./forge/bootstrap.sh    # + GApps, root, Firefox, F-Droid, K-9 and the Nextcloud bundle
+PRESET=libre ./forge/bootstrap.sh    # + F-Droid, Fulguris, K-9, the Nextcloud bundle, still no Google
+PRESET=full  ./forge/bootstrap.sh    # + GApps, root, Fulguris, F-Droid, K-9, the Nextcloud bundle
 PRESET=robin ./forge/bootstrap.sh    # the Nextbit look and root, no Google
 ```
 
@@ -224,9 +225,9 @@ behaviour of its own.
 | preset | tag | adds over `clean` |
 |---|---|---|
 | `clean` | `turbo-clean` | nothing — this is the baseline |
-| `libre` | `turbo-libre` | `fdroid`, `firefox`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud` |
+| `libre` | `turbo-libre` | `fdroid`, `fulguris`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `connectbot`, `linphone` |
 | `robin` | `turbo-robin` | `oem`, `root` |
-| `full` | `turbo` | `fdroid`, `firefox`, `gapps`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `root` |
+| `full` | `turbo` | `fdroid`, `fulguris`, `gapps`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `root`, `connectbot`, `linphone` |
 
 Every preset also carries the shared set, which is what makes this build look and behave the way
 it does regardless of which preset you pick:
@@ -253,7 +254,10 @@ work on any device rather than being wired into this tree.
 | `advanced-restart` | Advanced restart in the power menu |
 | `dark-default` | Default to dark theme |
 | `fdroid` | F-Droid app store + Privileged Extension (silent installs/updates) |
-| `firefox` | Firefox (Fennec F-Droid) as the browser, replacing Jelly |
+| `firefox` | Firefox (Fennec F-Droid) as the browser, replacing Jelly — still available, but 320 MB staged, so no preset carries it now |
+| `fulguris` | Fulguris as the browser, replacing Jelly — a WebView browser, 9 MB where Fennec stages 320 MB |
+| `connectbot` | ConnectBot: an SSH client with saved hosts, keys and port forwarding |
+| `linphone` | Linphone: a SIP client, for voice over data where the device has no VoLTE |
 | `gapps` | Google apps: Play Store and GMS from MindTheGapps, plus Google's versions of the stock apps |
 | `google-feed-off` | Google feed (-1 screen) off by default |
 | `k9` | K-9 Mail (the Thunderbird for Android codebase) as the mail client |
