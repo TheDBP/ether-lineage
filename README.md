@@ -16,7 +16,7 @@ phase plan are in **[PLAN.md](PLAN.md)**; the eBPF/cgroup reading behind criteri
 |---|---|
 | `device.conf` | `BRANCH=lineage-21.0`, `LUNCH_TARGET=lineage_ether-ap2a-userdebug` (21 has `build/release`), JDK 17 |
 | `overlay/local_manifests/ether.xml` | `hardware/sony/timekeep` at `lineage-21`; kernel, blobs and CAF HALs stay on their 18.1 pins |
-| presets | `libre` = `fdroid`, `firefox`; `full` = + `gapps`, `root`. K-9, TermOne Plus and KDE Connect have no `lineage-21.0` option patches yet, so they are not in the presets |
+| presets | `libre` = `fdroid`, `firefox`; `full` = + `gapps`. K-9, TermOne Plus and KDE Connect have no `lineage-21.0` option patches yet, so they are not in the presets |
 | `PLAN.md`, `scoping/` | this branch only |
 
 Expected to need work before the first build (from `PLAN.md`): `frameworks/libs/net` moved to
