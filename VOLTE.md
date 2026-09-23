@@ -331,6 +331,40 @@ these look like IMS. `lib-dplmedia` is second-order and no pattern would have ca
 now 53 entries, derived from the daemons' actual `NEEDED` closure, and `verify-volte-plan.sh` checks
 that closure so this class cannot recur.
 
+## Wi-Fi calling (VoWiFi)
+
+Same IMS stack, different transport: signalling goes through the same `org.codeaurora.ims` service,
+but the data path runs over an ePDG tunnel instead of LTE, and the QTI component that chooses
+between them is **CNE** (`cnd`, the Connectivity Engine). So VoWiFi is not a second project — it is
+VoLTE plus CNE.
+
+What already points that way: `device/qcom/sepolicy-legacy/common/ims.te` carries
+`unix_socket_connect(ims, cnd, cnd)` and `binder_call(ims, cnd)`, `imsdatadaemon` links
+`libcneapiclient.so` and `libdsi_netctrl.so`, and device patch 0004 already sets
+`carrier_wfc_ims_available_bool` for 310/260.
+
+**`cnd` is deliberately disabled on ether** — our own device patch 0002 commented it out:
+
+> The 19KB /vendor/bin/cnd shim needs a proprietary Qualcomm app we do not ship:
+> Package not found: com.qualcomm.qti.cne / com.quicinc.cne.CNEService
+> so it exits immediately and init respawns it forever — 60 times in one boot
+
+That was correct then and stays correct until the app is shipped. The stock zip has the whole set:
+
+| | |
+|---|---|
+| `priv-app/CNEService/CNEService.apk` | **4,627 bytes** + an `oat/` dir |
+| `framework/com.quicinc.cne.jar`, `cneapiclient.jar` | |
+| `etc/permissions/{cneapiclient,com.quicinc.cne}.xml`, `etc/cne/*.xml` | |
+| `vendor/lib64/{libcne,libcneapiclient,libcneqmiutils}.so` | libs — bullhead publishes the first two |
+
+**CNEService.apk is dex-stripped exactly like ims.apk** — 4.6 KB with the code in an odex. So VoWiFi
+is gated behind the *same* deodex-and-rebuild work as VoLTE, not behind anything new. Solving steps
+1-3 for `ims.apk` teaches the technique for `CNEService` too.
+
+Order of work, therefore: VoLTE first. Re-enabling `cnd` before its app exists just restores the
+60-respawns-per-boot that patch 0002 removed.
+
 ## Scoreboard
 
 daemons stay up → `sys.ims.QMI_DAEMON_STATUS=1` → `service list` shows `ims` → bridge bound
