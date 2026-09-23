@@ -331,6 +331,38 @@ these look like IMS. `lib-dplmedia` is second-order and no pattern would have ca
 now 53 entries, derived from the daemons' actual `NEEDED` closure, and `verify-volte-plan.sh` checks
 that closure so this class cannot recur.
 
+## Build 7 on hardware (2026-09-23)
+
+Cold boot, `/data` factory reset, SELinux **Enforcing**, no manual `start` commands.
+
+| daemon | result |
+|---|---|
+| `imsqmidaemon` | running, pid stable |
+| `imscmservice` | running, pid stable |
+| `imsdatadaemon` | **running** — the `get_prop(vendor_init, qcom_ims_prop)` rule cleared the stall |
+| `ims_rtp_daemon` | never started |
+
+- `sys.ims.QMI_DAEMON_STATUS=1` fires: `init: processing action (sys.ims.QMI_DAEMON_STATUS=1) from
+  (/vendor/etc/init/hw/init.target.rc:150)` -> starts `imsdatadaemon`. Stage one of the handshake works.
+- **Zero** avc denials naming `u:r:ims:s0` or `hal_imsrtp`. The three denial-derived rules hold.
+- The restart loop is gone: same pids across samples, elapsed climbing, all five previously-missing
+  NEEDED libs (`lib-rtpsl`, `lib-rtpcore`, `lib-rtpdaemoninterface`, `lib-rtpcommon`, `lib-dplmedia`)
+  present in `/vendor/lib64`.
+
+Stage two does not fire: `imsdatadaemon` never sets `sys.ims.DATA_DAEMON_STATUS`, so `ims_rtp_daemon`
+stays down. It is not crashing and not spinning -- `state=S`, `wchan=poll_schedule_timeout`, utime/stime
+frozen at 0/2 across samples. It is idle, waiting.
+
+Waiting for a SIM, most likely: `gsm.sim.state=CARD_IO_ERROR`, `ril.radiostate` empty,
+`gsm.operator.alpha` empty. With no card registered there is no data call for the data daemon to
+report on. **Stage two cannot be tested on this device until a working SIM is in it** -- if a SIM
+*is* inserted, then `CARD_IO_ERROR` is itself the bug to chase and it sits below IMS entirely.
+
+Do not read `sys.ims.*` with `getprop` from a shell and believe the answer: those properties are
+typed `qcom_ims_prop` and shell has no read access, so they come back **empty whether set or not**
+(`avc: denied { read } scontext=u:r:shell:s0 tcontext=u:object_r:qcom_ims_prop:s0`, and `libc:
+Access denied finding property`). Read the init action from logcat instead -- that is ground truth.
+
 ## Wi-Fi calling (VoWiFi)
 
 Same IMS stack, different transport: signalling goes through the same `org.codeaurora.ims` service,
