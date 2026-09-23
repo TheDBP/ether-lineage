@@ -400,7 +400,7 @@ Access denied finding property`). Read the init action from logcat instead -- th
 
 ## Step 1 done: the odex is back to editable smali (2026-09-23)
 
-`deodex-ims.sh <stock.zip> <workdir>` reproduces all of it. baksmali/smali come from the Android
+`deodex-app.sh <stock.zip> <workdir> ims` reproduces all of it. baksmali/smali come from the Android
 tree itself -- `prebuilts/extract-tools/common/smali/` -- so nothing has to be fetched.
 
 The odex is an ART OAT, so its instructions are resolved against the boot image it was compiled
@@ -494,6 +494,31 @@ is gated behind the *same* deodex-and-rebuild work as VoLTE, not behind anything
 
 Order of work, therefore: VoLTE first. Re-enabling `cnd` before its app exists just restores the
 60-respawns-per-boot that patch 0002 removed.
+
+### CNE deodexed too (2026-09-23) -- and it needs no bridge
+
+`deodex-app.sh <stock.zip> <workdir> cne` does for `CNEService.apk` what the `ims` target does for
+`ims.apk`: **101 smali files, 94 under `com/quicinc/cne`**, zero leftover quick opcodes, zero
+unresolved, round-trip reassembles at 101 classes.
+
+The two jars need nothing at all -- `com.quicinc.cne.jar` (325 KB `classes.dex`) and
+`cneapiclient.jar` (11.6 KB) still carry their own dex. Only the apk was stripped. Neither jar is on
+the boot classpath, so they ship as ordinary `/system/framework` jars with their permission XMLs.
+
+**CNEService references nothing Android removed.** Outside `android.*`/`java.*`/its own package it
+touches exactly three internal types, all still present on 13:
+
+| | used | status on 13 |
+|---|---|---|
+| `ITelephony` | `$Stub.asInterface` only | `.aidl` present; `asInterface` is AIDL-generated |
+| `PhoneConstants` | `DataState.{CONNECTED,CONNECTING,DISCONNECTED,SUSPENDED}`, `values()`, `ordinal()`, `State.IDLE` | all present (13 adds `DISCONNECTING`, additive) |
+| `AsyncChannel` | `<init>`, `connect`, `sendMessage` | all present |
+
+So CNE is **deodex, rebuild, sign** -- no legacy library and no bridge, which is steps 2 and 3 gone.
+That inverts the earlier assumption that VoWiFi costs the same as VoLTE: the expensive half is
+`ims.apk` alone. Once CNEService is rebuilt and shipped, patch 0002's reason for disabling `cnd`
+("Package not found: com.qualcomm.qti.cne / com.quicinc.cne.CNEService") no longer holds and the
+service and its HAL entries can come back.
 
 ## Scoreboard
 
