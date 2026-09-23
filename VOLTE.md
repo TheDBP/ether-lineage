@@ -558,6 +558,43 @@ touches exactly three internal types, all still present on 13:
 | `AsyncChannel` | `<init>`, `connect`, `sendMessage` | all present |
 
 So CNE is **deodex, rebuild, sign** -- no legacy library and no bridge, which is steps 2 and 3 gone.
+
+### ...and even the rebuild was already done for us
+
+`proprietary-files.txt` carries `-priv-app/CNEService/CNEService.apk`. The leading `-` is
+extract-utils' **deodex** marker, which is what `prebuilts/extract-tools/common/smali/` exists to
+serve. The build has therefore been shipping a fully deodexed CNEService with a 355 KB `classes.dex`
+all along, installed and running as the `.dataservices` process. `rebuild-app.sh cne` reproduces it
+but is not needed to ship it; the `cne` target earns its keep as the analysis that proved no bridge
+is required. Check the blob list for a `-` prefix before deodexing anything by hand.
+
+### CNE landed and verified on hardware (2026-09-23)
+
+The only things actually missing were the two edits that had disabled it, so they were removed from
+the patches that made them rather than reverted in a new one:
+
+- **0002** no longer comments out the `cnd` service in `init.qcom.rc`.
+- **0001** no longer strips `com.quicinc.cne.api` and `com.quicinc.cne.server` from `manifest.xml`.
+  It still strips `com.qualcomm.qti.dpm.api`, which was its other, still-correct intent.
+
+Verified by replaying all 18 patches onto the pristine base: clean apply, `cnd` live with no
+commented leftovers, both CNE HALs present, no `dpm.api`, manifest still parses.
+
+Then verified on the device by pushing the two files and rebooting, rather than spending a build:
+
+    init.svc.cnd = running          pid stable, started ONCE (not 60 times)
+    hwservicemanager rejections: 0  (was: "Cannot find entry com.quicinc.cne.server@2.0")
+    avc denials naming cnd:      0
+    QCNEJ/CndHalConnector: -> SND notifyMobileDataEnabledChanged(true)
+                              -> SND notifyWwanSubtypeChanged(13)   # 13 = LTE
+                              -> SND notifyScreenStateChanged(...)
+
+CNEService and cnd are in live two-way conversation. **Patch 0002's premise -- that cnd exits
+immediately and respawns 60 times a boot because its app is missing -- does not hold with the app
+present.** It starts once and stays up.
+
+That is CNE done. It does not by itself deliver Wi-Fi calling: CNE selects the transport, but the
+IMS registration still has to exist, so VoWiFi remains behind the `ims.apk` bridge like VoLTE.
 That inverts the earlier assumption that VoWiFi costs the same as VoLTE: the expensive half is
 `ims.apk` alone. Once CNEService is rebuilt and shipped, patch 0002's reason for disabling `cnd`
 ("Package not found: com.qualcomm.qti.cne / com.quicinc.cne.CNEService") no longer holds and the
