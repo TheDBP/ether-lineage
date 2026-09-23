@@ -539,12 +539,33 @@ Bridged: `startSession`/`endSession`, `isConnected`, `isOpened`, `addRegistratio
 adapter -- ten of eleven callbacks map directly; `registrationFeatureCapabilityChanged` has no 13
 equivalent and is dropped explicitly rather than approximated.
 
-Not bridged: the six methods that return or take a 7.1 sub-interface (`createCallSession`,
-`getPendingCallSession`, `getUtInterface`, `getConfigInterface`, `getEcbmInterface`,
-`getMultiEndpointInterface`). Each needs a wrapper, and its `.aidl` filled in with real method order
-first -- those files are deliberately empty and say so. They throw `UnsupportedOperationException`;
-returning null would defer the failure somewhere unrelated. **Calls will not work until these land** --
-`createCallSession` is the call path.
+**All six sub-interface methods are now bridged too** (patch 0022), so nothing in the feature throws:
+
+| wrapper | shape |
+|---|---|
+| `CallSessionWrapper` | 28 delegations onto `ImsCallSessionImplBase` |
+| `CallSessionListenerAdapter` | 30 callbacks back; all thirty exist on 13 with matching shape |
+| `UtWrapper` | 16 delegations onto `ImsUtImplBase` |
+| `ConfigWrapper` | pure delegation -- 13's `IImsConfig` is method-for-method 7.1's |
+| `EcbmWrapper` / `MultiEndpointWrapper` | 2 each |
+
+Two design points worth keeping. The session argument in every call-session callback is resolved
+back to the wrapper already built rather than a fresh one, so **object identity stays stable** --
+the telephony stack matches callbacks to calls by it; only the genuinely new sessions from merge and
+conference extension get their own wrapper. And `setListener` on `ImsEcbmImplBase` /
+`ImsMultiEndpointImplBase` is **not** an overridable: it lives on an inner Stub because the base owns
+the listener and exposes `enteredEcbm()` / `onImsExternalCallStateUpdate()` for the implementation to
+call. Each of those wrappers therefore registers its own adapter with the legacy service and
+forwards inward.
+
+Three things deliberately do not forward, each logged rather than dropped silently:
+
+- `getVideoCallProvider` returns null -- 7.1's provider is a different interface, and video is
+  unreachable before VoLTE works at all.
+- `registrationFeatureCapabilityChanged` has no 13 equivalent.
+- `removeRegistrationListener` cannot be expressed: 7.1 offers only `setRegistrationListener`, which
+  *replaces* the single listener rather than detaching one of several, so calling it would silently
+  unhook whoever else registered.
 
 ### Two prerequisites that are not code -- landed in 0020
 
