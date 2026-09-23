@@ -1,0 +1,951 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 18:04:49 -0400
+Subject: [PATCH] ether: ImsBridge -- bind the 7.1 ims.apk to the modern
+ telephony stack
+
+ims.apk implements com.android.ims.internal.IImsService, the pre-P IMS binding Android 9 deleted.
+frameworks/opt/telephony still carries the compat path (ImsServiceControllerCompat,
+MmTelFeatureCompatAdapter) behind android.telephony.ims.compat.ImsService, so the gap is one
+translation layer, not a rewrite.
+
+The legacy interfaces are hand-written AIDL in org.codeaurora.ims.legacy, matching the rename
+already applied to the rebuilt apk. Method ORDER is transcribed from the 7.1 binary's TRANSACTION_*
+constants, because AIDL numbers transactions by declaration order and the far end is stock's
+compiled 2016 code that cannot be recompiled to agree with us. Verified after building: the
+generated stub numbers open=1 through getMultiEndpointInterface=16, matching 7.1, and advertises
+the same renamed descriptor the apk does.
+
+The shape difference the bridge absorbs is that 7.1 is serviceId-keyed -- open() returns an int
+every later call carries -- while a MMTelFeature instance already implies a session, so the bridge
+holds the id.
+
+Working: startSession/endSession, isConnected, isOpened, addRegistrationListener, createCallProfile,
+turnOnIms, turnOffIms, setUiTTYMode, and the registration-listener adapter (ten callbacks map
+directly; registrationFeatureCapabilityChanged has no 13 equivalent and is dropped explicitly).
+Parcelable conversion is done for ImsCallProfile, ImsReasonInfo and ImsStreamMediaProfile -- each is
+a handful of instance fields, not the dozens the constant lists suggest.
+
+The six methods that return or take a 7.1 sub-interface throw UnsupportedOperationException for now
+rather than returning null, which would defer the failure somewhere unrelated. They need a wrapper
+apiece and their .aidl filled in with real method order first.
+---
+ ims-bridge/Android.bp                         |  32 +++
+ ims-bridge/AndroidManifest.xml                |  31 +++
+ .../codeaurora/ims/legacy/ImsCallProfile.aidl |   3 +
+ .../codeaurora/ims/legacy/ImsReasonInfo.aidl  |   3 +
+ .../ims/legacy/ImsStreamMediaProfile.aidl     |   3 +
+ .../ims/legacy/internal/IImsCallSession.aidl  |  13 ++
+ .../internal/IImsCallSessionListener.aidl     |  13 ++
+ .../ims/legacy/internal/IImsConfig.aidl       |  13 ++
+ .../ims/legacy/internal/IImsEcbm.aidl         |  13 ++
+ .../legacy/internal/IImsMultiEndpoint.aidl    |  13 ++
+ .../internal/IImsRegistrationListener.aidl    |  24 ++
+ .../ims/legacy/internal/IImsService.aidl      |  45 ++++
+ .../ims/legacy/internal/IImsUt.aidl           |  13 ++
+ .../codeaurora/ims/legacy/ImsCallProfile.java |  59 +++++
+ .../codeaurora/ims/legacy/ImsReasonInfo.java  |  49 ++++
+ .../ims/legacy/ImsStreamMediaProfile.java     |  41 ++++
+ .../src/org/lineageos/ims/bridge/Convert.java |  61 +++++
+ .../ims/bridge/ImsBridgeService.java          |  31 +++
+ .../ims/bridge/LegacyMMTelFeature.java        | 215 ++++++++++++++++++
+ .../bridge/RegistrationListenerAdapter.java   |  82 +++++++
+ 20 files changed, 757 insertions(+)
+ create mode 100644 ims-bridge/Android.bp
+ create mode 100644 ims-bridge/AndroidManifest.xml
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/ImsCallProfile.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/ImsReasonInfo.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/ImsStreamMediaProfile.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsCallSession.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsCallSessionListener.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsConfig.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsEcbm.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsMultiEndpoint.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsRegistrationListener.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsService.aidl
+ create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsUt.aidl
+ create mode 100644 ims-bridge/src/org/codeaurora/ims/legacy/ImsCallProfile.java
+ create mode 100644 ims-bridge/src/org/codeaurora/ims/legacy/ImsReasonInfo.java
+ create mode 100644 ims-bridge/src/org/codeaurora/ims/legacy/ImsStreamMediaProfile.java
+ create mode 100644 ims-bridge/src/org/lineageos/ims/bridge/Convert.java
+ create mode 100644 ims-bridge/src/org/lineageos/ims/bridge/ImsBridgeService.java
+ create mode 100644 ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
+ create mode 100644 ims-bridge/src/org/lineageos/ims/bridge/RegistrationListenerAdapter.java
+
+diff --git a/ims-bridge/Android.bp b/ims-bridge/Android.bp
+new file mode 100644
+index 0000000..cb192b9
+--- /dev/null
++++ b/ims-bridge/Android.bp
+@@ -0,0 +1,32 @@
++//
++// ImsBridge -- lets the modern telephony stack talk to ether's 7.1 ims.apk.
++//
++// platform_apis because everything it touches is @hide: android.telephony.ims.compat.*,
++// com.android.ims.internal.*, android.os.ServiceManager.
++//
++// certificate "platform" because it shares android.uid.phone with ims.apk.
++//
++package {
++    default_applicable_licenses: ["Android-Apache-2.0"],
++}
++
++android_app {
++    name: "ImsBridge",
++
++    srcs: [
++        "src/**/*.java",
++        "aidl/**/*.aidl",
++    ],
++
++    aidl: {
++        local_include_dirs: ["aidl"],
++    },
++
++    platform_apis: true,
++    certificate: "platform",
++    privileged: true,
++
++    optimize: {
++        enabled: false,
++    },
++}
+diff --git a/ims-bridge/AndroidManifest.xml b/ims-bridge/AndroidManifest.xml
+new file mode 100644
+index 0000000..2bef624
+--- /dev/null
++++ b/ims-bridge/AndroidManifest.xml
+@@ -0,0 +1,31 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="org.lineageos.ims.bridge"
++    android:sharedUserId="android.uid.phone">
++
++    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
++    <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE" />
++    <uses-permission android:name="android.permission.MODIFY_PHONE_STATE" />
++
++    <application
++        android:label="IMS Bridge"
++        android:directBootAware="true"
++        android:persistent="true">
++
++        <!--
++          ImsResolver looks for this action, requires the service to be protected by
++          BIND_IMS_SERVICE, and reads the MMTEL_FEATURE metadata to learn what the service offers.
++          Miss any of the three and it is skipped without a useful log line.
++        -->
++        <service
++            android:name=".ImsBridgeService"
++            android:directBootAware="true"
++            android:exported="true"
++            android:permission="android.permission.BIND_IMS_SERVICE">
++            <intent-filter>
++                <action android:name="android.telephony.ims.compat.ImsService" />
++            </intent-filter>
++            <meta-data android:name="android.telephony.ims.MMTEL_FEATURE" android:value="true" />
++        </service>
++    </application>
++</manifest>
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsCallProfile.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsCallProfile.aidl
+new file mode 100644
+index 0000000..3edb805
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsCallProfile.aidl
+@@ -0,0 +1,3 @@
++package org.codeaurora.ims.legacy;
++
++parcelable ImsCallProfile;
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsReasonInfo.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsReasonInfo.aidl
+new file mode 100644
+index 0000000..78195ad
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsReasonInfo.aidl
+@@ -0,0 +1,3 @@
++package org.codeaurora.ims.legacy;
++
++parcelable ImsReasonInfo;
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsStreamMediaProfile.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsStreamMediaProfile.aidl
+new file mode 100644
+index 0000000..712a90e
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/ImsStreamMediaProfile.aidl
+@@ -0,0 +1,3 @@
++package org.codeaurora.ims.legacy;
++
++parcelable ImsStreamMediaProfile;
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsCallSession.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsCallSession.aidl
+new file mode 100644
+index 0000000..82e3dfd
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsCallSession.aidl
+@@ -0,0 +1,13 @@
++package org.codeaurora.ims.legacy.internal;
++
++/**
++ * The 7.1 com.android.ims.internal.IImsCallSession, renamed.
++ *
++ * DELIBERATELY EMPTY. The bridge does not yet call through this interface, and an empty body is
++ * enough for IImsService.aidl to compile and for the binder to be passed around. It is NOT enough
++ * to invoke: AIDL would number transactions from 1 here and stock's 7.1 binary numbers them by its
++ * own declaration order. Before calling anything on this, transcribe the real method list and order
++ * from the TRANSACTION_* constants in the 7.1 $Stub, the same way IImsService.aidl was done.
++ */
++interface IImsCallSession {
++}
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsCallSessionListener.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsCallSessionListener.aidl
+new file mode 100644
+index 0000000..62a200a
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsCallSessionListener.aidl
+@@ -0,0 +1,13 @@
++package org.codeaurora.ims.legacy.internal;
++
++/**
++ * The 7.1 com.android.ims.internal.IImsCallSessionListener, renamed.
++ *
++ * DELIBERATELY EMPTY. The bridge does not yet call through this interface, and an empty body is
++ * enough for IImsService.aidl to compile and for the binder to be passed around. It is NOT enough
++ * to invoke: AIDL would number transactions from 1 here and stock's 7.1 binary numbers them by its
++ * own declaration order. Before calling anything on this, transcribe the real method list and order
++ * from the TRANSACTION_* constants in the 7.1 $Stub, the same way IImsService.aidl was done.
++ */
++interface IImsCallSessionListener {
++}
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsConfig.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsConfig.aidl
+new file mode 100644
+index 0000000..3065589
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsConfig.aidl
+@@ -0,0 +1,13 @@
++package org.codeaurora.ims.legacy.internal;
++
++/**
++ * The 7.1 com.android.ims.internal.IImsConfig, renamed.
++ *
++ * DELIBERATELY EMPTY. The bridge does not yet call through this interface, and an empty body is
++ * enough for IImsService.aidl to compile and for the binder to be passed around. It is NOT enough
++ * to invoke: AIDL would number transactions from 1 here and stock's 7.1 binary numbers them by its
++ * own declaration order. Before calling anything on this, transcribe the real method list and order
++ * from the TRANSACTION_* constants in the 7.1 $Stub, the same way IImsService.aidl was done.
++ */
++interface IImsConfig {
++}
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsEcbm.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsEcbm.aidl
+new file mode 100644
+index 0000000..2ffd5a7
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsEcbm.aidl
+@@ -0,0 +1,13 @@
++package org.codeaurora.ims.legacy.internal;
++
++/**
++ * The 7.1 com.android.ims.internal.IImsEcbm, renamed.
++ *
++ * DELIBERATELY EMPTY. The bridge does not yet call through this interface, and an empty body is
++ * enough for IImsService.aidl to compile and for the binder to be passed around. It is NOT enough
++ * to invoke: AIDL would number transactions from 1 here and stock's 7.1 binary numbers them by its
++ * own declaration order. Before calling anything on this, transcribe the real method list and order
++ * from the TRANSACTION_* constants in the 7.1 $Stub, the same way IImsService.aidl was done.
++ */
++interface IImsEcbm {
++}
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsMultiEndpoint.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsMultiEndpoint.aidl
+new file mode 100644
+index 0000000..d6daf4b
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsMultiEndpoint.aidl
+@@ -0,0 +1,13 @@
++package org.codeaurora.ims.legacy.internal;
++
++/**
++ * The 7.1 com.android.ims.internal.IImsMultiEndpoint, renamed.
++ *
++ * DELIBERATELY EMPTY. The bridge does not yet call through this interface, and an empty body is
++ * enough for IImsService.aidl to compile and for the binder to be passed around. It is NOT enough
++ * to invoke: AIDL would number transactions from 1 here and stock's 7.1 binary numbers them by its
++ * own declaration order. Before calling anything on this, transcribe the real method list and order
++ * from the TRANSACTION_* constants in the 7.1 $Stub, the same way IImsService.aidl was done.
++ */
++interface IImsMultiEndpoint {
++}
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsRegistrationListener.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsRegistrationListener.aidl
+new file mode 100644
+index 0000000..d04ed92
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsRegistrationListener.aidl
+@@ -0,0 +1,24 @@
++package org.codeaurora.ims.legacy.internal;
++
++import android.net.Uri;
++import org.codeaurora.ims.legacy.ImsReasonInfo;
++
++/**
++ * The 7.1 com.android.ims.internal.IImsRegistrationListener, renamed. Declaration order transcribed
++ * from the 7.1 binary's TRANSACTION_* constants -- see IImsService.aidl. 13's listener of the same
++ * name has 13 methods against these 11, which is why the bridge wraps rather than forwards.
++ */
++interface IImsRegistrationListener {
++    void registrationConnected();
++    void registrationProgressing();
++    void registrationConnectedWithRadioTech(int imsRadioTech);
++    void registrationProgressingWithRadioTech(int imsRadioTech);
++    void registrationDisconnected(in ImsReasonInfo imsReasonInfo);
++    void registrationResumed();
++    void registrationSuspended();
++    void registrationServiceCapabilityChanged(int serviceClass, int event);
++    void registrationFeatureCapabilityChanged(int serviceClass,
++            in int[] enabledFeatures, in int[] disabledFeatures);
++    void voiceMessageCountUpdate(int count);
++    void registrationAssociatedUriChanged(in Uri[] uris);
++}
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsService.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsService.aidl
+new file mode 100644
+index 0000000..549f9f9
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsService.aidl
+@@ -0,0 +1,45 @@
++package org.codeaurora.ims.legacy.internal;
++
++import android.app.PendingIntent;
++import android.os.Message;
++import org.codeaurora.ims.legacy.ImsCallProfile;
++import org.codeaurora.ims.legacy.internal.IImsCallSession;
++import org.codeaurora.ims.legacy.internal.IImsCallSessionListener;
++import org.codeaurora.ims.legacy.internal.IImsConfig;
++import org.codeaurora.ims.legacy.internal.IImsEcbm;
++import org.codeaurora.ims.legacy.internal.IImsMultiEndpoint;
++import org.codeaurora.ims.legacy.internal.IImsRegistrationListener;
++import org.codeaurora.ims.legacy.internal.IImsUt;
++
++/**
++ * The 7.1 com.android.ims.internal.IImsService, renamed to match the rebuilt ims.apk.
++ *
++ * METHOD ORDER IS LOAD-BEARING. AIDL assigns transaction codes by declaration order, and the other
++ * end of this interface is stock's compiled 7.1 binary inside ims.apk -- it cannot be recompiled to
++ * agree with us. The order below is transcribed from that binary's TRANSACTION_* constants
++ * (1 open ... 16 getMultiEndpointInterface). Do not reorder, insert, or remove.
++ *
++ * The API is serviceId-keyed: open() returns an id every later call must carry. The modern compat
++ * API has no such id -- a feature instance implies the session -- so the bridge holds it.
++ */
++interface IImsService {
++    int open(int phoneId, int serviceClass, in PendingIntent incomingCallIntent,
++            in IImsRegistrationListener listener);
++    void close(int serviceId);
++    boolean isConnected(int serviceId, int serviceType, int callType);
++    boolean isOpened(int serviceId);
++    void setRegistrationListener(int serviceId, in IImsRegistrationListener listener);
++    void addRegistrationListener(int serviceId, int serviceClass,
++            in IImsRegistrationListener listener);
++    ImsCallProfile createCallProfile(int serviceId, int serviceType, int callType);
++    IImsCallSession createCallSession(int serviceId, in ImsCallProfile profile,
++            in IImsCallSessionListener listener);
++    IImsCallSession getPendingCallSession(int serviceId, String callId);
++    IImsUt getUtInterface(int serviceId);
++    IImsConfig getConfigInterface(int phoneId);
++    void turnOnIms(int phoneId);
++    void turnOffIms(int phoneId);
++    IImsEcbm getEcbmInterface(int serviceId);
++    void setUiTTYMode(int serviceId, int uiTtyMode, in Message onComplete);
++    IImsMultiEndpoint getMultiEndpointInterface(int serviceId);
++}
+diff --git a/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsUt.aidl b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsUt.aidl
+new file mode 100644
+index 0000000..c1b03ed
+--- /dev/null
++++ b/ims-bridge/aidl/org/codeaurora/ims/legacy/internal/IImsUt.aidl
+@@ -0,0 +1,13 @@
++package org.codeaurora.ims.legacy.internal;
++
++/**
++ * The 7.1 com.android.ims.internal.IImsUt, renamed.
++ *
++ * DELIBERATELY EMPTY. The bridge does not yet call through this interface, and an empty body is
++ * enough for IImsService.aidl to compile and for the binder to be passed around. It is NOT enough
++ * to invoke: AIDL would number transactions from 1 here and stock's 7.1 binary numbers them by its
++ * own declaration order. Before calling anything on this, transcribe the real method list and order
++ * from the TRANSACTION_* constants in the 7.1 $Stub, the same way IImsService.aidl was done.
++ */
++interface IImsUt {
++}
+diff --git a/ims-bridge/src/org/codeaurora/ims/legacy/ImsCallProfile.java b/ims-bridge/src/org/codeaurora/ims/legacy/ImsCallProfile.java
+new file mode 100644
+index 0000000..8e0a57b
+--- /dev/null
++++ b/ims-bridge/src/org/codeaurora/ims/legacy/ImsCallProfile.java
+@@ -0,0 +1,59 @@
++package org.codeaurora.ims.legacy;
++
++import android.os.Bundle;
++import android.os.Parcel;
++import android.os.Parcelable;
++
++/**
++ * The 7.1 com.android.ims.ImsCallProfile, renamed.
++ *
++ * mRestrictCause is an instance field on 7.1 but is NOT written to the parcel there, so it is not
++ * written here either. Adding it would desynchronise every subsequent read.
++ */
++public class ImsCallProfile implements Parcelable {
++    public int mServiceType;
++    public int mCallType;
++    public int mRestrictCause;
++    public Bundle mCallExtras;
++    public ImsStreamMediaProfile mMediaProfile;
++
++    public ImsCallProfile() {
++        mCallExtras = new Bundle();
++        mMediaProfile = new ImsStreamMediaProfile();
++    }
++
++    public ImsCallProfile(int serviceType, int callType) {
++        mServiceType = serviceType;
++        mCallType = callType;
++        mCallExtras = new Bundle();
++        mMediaProfile = new ImsStreamMediaProfile();
++    }
++
++    private ImsCallProfile(Parcel in) { readFromParcel(in); }
++
++    @Override
++    public int describeContents() { return 0; }
++
++    @Override
++    public void writeToParcel(Parcel out, int flags) {
++        out.writeInt(mServiceType);
++        out.writeInt(mCallType);
++        out.writeParcelable(mCallExtras, 0);
++        out.writeParcelable(mMediaProfile, 0);
++    }
++
++    private void readFromParcel(Parcel in) {
++        mServiceType = in.readInt();
++        mCallType = in.readInt();
++        mCallExtras = in.readParcelable(Bundle.class.getClassLoader(), Bundle.class);
++        mMediaProfile = in.readParcelable(
++                ImsStreamMediaProfile.class.getClassLoader(), ImsStreamMediaProfile.class);
++    }
++
++    public static final Creator<ImsCallProfile> CREATOR = new Creator<ImsCallProfile>() {
++        @Override
++        public ImsCallProfile createFromParcel(Parcel in) { return new ImsCallProfile(in); }
++        @Override
++        public ImsCallProfile[] newArray(int size) { return new ImsCallProfile[size]; }
++    };
++}
+diff --git a/ims-bridge/src/org/codeaurora/ims/legacy/ImsReasonInfo.java b/ims-bridge/src/org/codeaurora/ims/legacy/ImsReasonInfo.java
+new file mode 100644
+index 0000000..ac2be99
+--- /dev/null
++++ b/ims-bridge/src/org/codeaurora/ims/legacy/ImsReasonInfo.java
+@@ -0,0 +1,49 @@
++package org.codeaurora.ims.legacy;
++
++import android.os.Parcel;
++import android.os.Parcelable;
++
++/**
++ * The 7.1 com.android.ims.ImsReasonInfo, renamed. Three instance fields; the other 88 members of
++ * the original are constants and carry no wire presence. Order matches 7.1 writeToParcel exactly --
++ * this has to marshal identically to the copy inside ims.apk or every call across the bridge
++ * silently mis-reads.
++ */
++public class ImsReasonInfo implements Parcelable {
++    public int mCode;
++    public int mExtraCode;
++    public String mExtraMessage;
++
++    public ImsReasonInfo() { }
++
++    public ImsReasonInfo(int code, int extraCode, String extraMessage) {
++        mCode = code;
++        mExtraCode = extraCode;
++        mExtraMessage = extraMessage;
++    }
++
++    private ImsReasonInfo(Parcel in) { readFromParcel(in); }
++
++    @Override
++    public int describeContents() { return 0; }
++
++    @Override
++    public void writeToParcel(Parcel out, int flags) {
++        out.writeInt(mCode);
++        out.writeInt(mExtraCode);
++        out.writeString(mExtraMessage);
++    }
++
++    private void readFromParcel(Parcel in) {
++        mCode = in.readInt();
++        mExtraCode = in.readInt();
++        mExtraMessage = in.readString();
++    }
++
++    public static final Creator<ImsReasonInfo> CREATOR = new Creator<ImsReasonInfo>() {
++        @Override
++        public ImsReasonInfo createFromParcel(Parcel in) { return new ImsReasonInfo(in); }
++        @Override
++        public ImsReasonInfo[] newArray(int size) { return new ImsReasonInfo[size]; }
++    };
++}
+diff --git a/ims-bridge/src/org/codeaurora/ims/legacy/ImsStreamMediaProfile.java b/ims-bridge/src/org/codeaurora/ims/legacy/ImsStreamMediaProfile.java
+new file mode 100644
+index 0000000..5aa1e19
+--- /dev/null
++++ b/ims-bridge/src/org/codeaurora/ims/legacy/ImsStreamMediaProfile.java
+@@ -0,0 +1,41 @@
++package org.codeaurora.ims.legacy;
++
++import android.os.Parcel;
++import android.os.Parcelable;
++
++/** The 7.1 com.android.ims.ImsStreamMediaProfile, renamed. Four ints, in 7.1's order. */
++public class ImsStreamMediaProfile implements Parcelable {
++    public int mAudioQuality;
++    public int mAudioDirection;
++    public int mVideoQuality;
++    public int mVideoDirection;
++
++    public ImsStreamMediaProfile() { }
++
++    private ImsStreamMediaProfile(Parcel in) { readFromParcel(in); }
++
++    @Override
++    public int describeContents() { return 0; }
++
++    @Override
++    public void writeToParcel(Parcel out, int flags) {
++        out.writeInt(mAudioQuality);
++        out.writeInt(mAudioDirection);
++        out.writeInt(mVideoQuality);
++        out.writeInt(mVideoDirection);
++    }
++
++    private void readFromParcel(Parcel in) {
++        mAudioQuality = in.readInt();
++        mAudioDirection = in.readInt();
++        mVideoQuality = in.readInt();
++        mVideoDirection = in.readInt();
++    }
++
++    public static final Creator<ImsStreamMediaProfile> CREATOR = new Creator<ImsStreamMediaProfile>() {
++        @Override
++        public ImsStreamMediaProfile createFromParcel(Parcel in) { return new ImsStreamMediaProfile(in); }
++        @Override
++        public ImsStreamMediaProfile[] newArray(int size) { return new ImsStreamMediaProfile[size]; }
++    };
++}
+diff --git a/ims-bridge/src/org/lineageos/ims/bridge/Convert.java b/ims-bridge/src/org/lineageos/ims/bridge/Convert.java
+new file mode 100644
+index 0000000..8d3b08c
+--- /dev/null
++++ b/ims-bridge/src/org/lineageos/ims/bridge/Convert.java
+@@ -0,0 +1,61 @@
++package org.lineageos.ims.bridge;
++
++/**
++ * Parcelable conversion between the 7.1 types the ims.apk speaks and the modern ones the platform
++ * expects. Every one of these is a handful of fields: the originals look enormous only because
++ * ImsReasonInfo carries 88 constants alongside its 3 instance fields.
++ */
++public final class Convert {
++    private Convert() { }
++
++    public static android.telephony.ims.ImsReasonInfo toModern(
++            org.codeaurora.ims.legacy.ImsReasonInfo in) {
++        if (in == null) return null;
++        return new android.telephony.ims.ImsReasonInfo(in.mCode, in.mExtraCode, in.mExtraMessage);
++    }
++
++    public static org.codeaurora.ims.legacy.ImsReasonInfo toLegacy(
++            android.telephony.ims.ImsReasonInfo in) {
++        if (in == null) return null;
++        return new org.codeaurora.ims.legacy.ImsReasonInfo(
++                in.getCode(), in.getExtraCode(), in.getExtraMessage());
++    }
++
++    public static android.telephony.ims.ImsStreamMediaProfile toModern(
++            org.codeaurora.ims.legacy.ImsStreamMediaProfile in) {
++        if (in == null) return null;
++        return new android.telephony.ims.ImsStreamMediaProfile(
++                in.mAudioQuality, in.mAudioDirection, in.mVideoQuality, in.mVideoDirection,
++                android.telephony.ims.ImsStreamMediaProfile.RTT_MODE_DISABLED);
++    }
++
++    public static org.codeaurora.ims.legacy.ImsStreamMediaProfile toLegacy(
++            android.telephony.ims.ImsStreamMediaProfile in) {
++        if (in == null) return null;
++        org.codeaurora.ims.legacy.ImsStreamMediaProfile out =
++                new org.codeaurora.ims.legacy.ImsStreamMediaProfile();
++        out.mAudioQuality = in.getAudioQuality();
++        out.mAudioDirection = in.getAudioDirection();
++        out.mVideoQuality = in.getVideoQuality();
++        out.mVideoDirection = in.getVideoDirection();
++        return out;
++    }
++
++    public static android.telephony.ims.ImsCallProfile toModern(
++            org.codeaurora.ims.legacy.ImsCallProfile in) {
++        if (in == null) return null;
++        return new android.telephony.ims.ImsCallProfile(in.mServiceType, in.mCallType,
++                in.mCallExtras, toModern(in.mMediaProfile));
++    }
++
++    public static org.codeaurora.ims.legacy.ImsCallProfile toLegacy(
++            android.telephony.ims.ImsCallProfile in) {
++        if (in == null) return null;
++        org.codeaurora.ims.legacy.ImsCallProfile out =
++                new org.codeaurora.ims.legacy.ImsCallProfile(
++                        in.getServiceType(), in.getCallType());
++        out.mCallExtras = in.getCallExtras();
++        out.mMediaProfile = toLegacy(in.getMediaProfile());
++        return out;
++    }
++}
+diff --git a/ims-bridge/src/org/lineageos/ims/bridge/ImsBridgeService.java b/ims-bridge/src/org/lineageos/ims/bridge/ImsBridgeService.java
+new file mode 100644
+index 0000000..cc61a6a
+--- /dev/null
++++ b/ims-bridge/src/org/lineageos/ims/bridge/ImsBridgeService.java
+@@ -0,0 +1,31 @@
++package org.lineageos.ims.bridge;
++
++import android.telephony.ims.compat.ImsService;
++import android.telephony.ims.compat.feature.MMTelFeature;
++import android.util.Log;
++
++/**
++ * Binds ims.apk -- a 2016 QTI IMS stack built against an API Android 9 deleted -- to the modern
++ * telephony framework, through the compat ImsService path that frameworks/opt/telephony still
++ * carries (ImsServiceControllerCompat / MmTelFeatureCompatAdapter).
++ *
++ * For ImsResolver to bind this at all the device must also:
++ *   - ship android.hardware.telephony.ims.prebuilt.xml, or PhoneGlobals never builds an
++ *     ImsResolver in the first place, and
++ *   - point config_ims_mmtel_package at this package.
++ */
++public class ImsBridgeService extends ImsService {
++    static final String TAG = "ImsBridge";
++
++    @Override
++    public MMTelFeature onCreateMMTelImsFeature(int slotId) {
++        Log.i(TAG, "onCreateMMTelImsFeature slot=" + slotId);
++        return new LegacyMMTelFeature(slotId);
++    }
++
++    @Override
++    public MMTelFeature onCreateEmergencyMMTelImsFeature(int slotId) {
++        Log.i(TAG, "onCreateEmergencyMMTelImsFeature slot=" + slotId);
++        return new LegacyMMTelFeature(slotId);
++    }
++}
+diff --git a/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java b/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
+new file mode 100644
+index 0000000..289b1c7
+--- /dev/null
++++ b/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
+@@ -0,0 +1,215 @@
++package org.lineageos.ims.bridge;
++
++import android.app.PendingIntent;
++import android.os.IBinder;
++import android.os.Message;
++import android.os.RemoteException;
++import android.os.ServiceManager;
++import android.telephony.ims.ImsCallProfile;
++import android.telephony.ims.compat.feature.ImsFeature;
++import android.telephony.ims.compat.feature.MMTelFeature;
++import android.telephony.ims.stub.ImsEcbmImplBase;
++import android.telephony.ims.stub.ImsMultiEndpointImplBase;
++import android.telephony.ims.stub.ImsUtImplBase;
++import android.util.Log;
++
++import com.android.ims.internal.IImsCallSession;
++import com.android.ims.internal.IImsCallSessionListener;
++import com.android.ims.internal.IImsConfig;
++import com.android.ims.internal.IImsRegistrationListener;
++
++import org.codeaurora.ims.legacy.internal.IImsService;
++
++/**
++ * Presents ims.apk's 7.1 IImsService to the platform as a modern MMTelFeature.
++ *
++ * The shape difference this class exists to absorb: the 7.1 API is serviceId-keyed -- open() hands
++ * back an int every later call must carry -- while a MMTelFeature instance already implies one
++ * session. So the bridge holds the id and injects it.
++ *
++ * ims.apk registers itself as "ims" with ServiceManager; it is not a bound service.
++ *
++ * Note that no MMTelFeature method declares RemoteException, while every legacy call throws it. The
++ * conversion is deliberate and happens in one place, callLegacy-style, rather than being swallowed
++ * per call site: a dead IMS service should surface, not read as "feature present but idle".
++ */
++public class LegacyMMTelFeature extends MMTelFeature {
++    private static final String TAG = ImsBridgeService.TAG;
++
++    /** 7.1 ImsServiceClass.MMTEL. */
++    private static final int SERVICE_CLASS_MMTEL = 1;
++
++    private static final int INVALID_SERVICE_ID = -1;
++
++    private final int mSlotId;
++    private int mServiceId = INVALID_SERVICE_ID;
++
++    LegacyMMTelFeature(int slotId) {
++        mSlotId = slotId;
++        setFeatureState(ImsFeature.STATE_INITIALIZING);
++    }
++
++    private IImsService legacyOrNull() {
++        IBinder b = ServiceManager.getService("ims");
++        if (b == null) {
++            Log.w(TAG, "slot " + mSlotId + ": ims service not registered");
++            return null;
++        }
++        return IImsService.Stub.asInterface(b);
++    }
++
++    private IImsService legacy() {
++        IImsService s = legacyOrNull();
++        if (s == null) {
++            throw new IllegalStateException("legacy ims service unavailable");
++        }
++        return s;
++    }
++
++    private static RuntimeException rethrow(String what, RemoteException e) {
++        Log.e(TAG, what + " failed across the bridge", e);
++        return new RuntimeException(what + ": " + e.getMessage(), e);
++    }
++
++    @Override
++    public int startSession(PendingIntent incomingCallIntent, IImsRegistrationListener listener) {
++        try {
++            RegistrationListenerAdapter adapter =
++                    listener != null ? new RegistrationListenerAdapter(listener) : null;
++            mServiceId = legacy().open(mSlotId, SERVICE_CLASS_MMTEL, incomingCallIntent, adapter);
++            Log.i(TAG, "slot " + mSlotId + ": legacy session open, serviceId=" + mServiceId);
++            setFeatureState(ImsFeature.STATE_READY);
++            return mServiceId;
++        } catch (RemoteException e) {
++            throw rethrow("startSession", e);
++        }
++    }
++
++    @Override
++    public void endSession(int sessionId) {
++        try {
++            IImsService s = legacyOrNull();
++            if (s != null) {
++                s.close(sessionId);
++            }
++        } catch (RemoteException e) {
++            Log.e(TAG, "endSession failed", e);
++        } finally {
++            mServiceId = INVALID_SERVICE_ID;
++            setFeatureState(ImsFeature.STATE_NOT_AVAILABLE);
++        }
++    }
++
++    @Override
++    public boolean isConnected(int callSessionType, int callType) {
++        if (mServiceId == INVALID_SERVICE_ID) return false;
++        try {
++            return legacy().isConnected(mServiceId, callSessionType, callType);
++        } catch (RemoteException e) {
++            throw rethrow("isConnected", e);
++        }
++    }
++
++    @Override
++    public boolean isOpened() {
++        if (mServiceId == INVALID_SERVICE_ID) return false;
++        try {
++            return legacy().isOpened(mServiceId);
++        } catch (RemoteException e) {
++            throw rethrow("isOpened", e);
++        }
++    }
++
++    @Override
++    public void addRegistrationListener(IImsRegistrationListener listener) {
++        if (listener == null) return;
++        try {
++            legacy().addRegistrationListener(
++                    mServiceId, SERVICE_CLASS_MMTEL, new RegistrationListenerAdapter(listener));
++        } catch (RemoteException e) {
++            throw rethrow("addRegistrationListener", e);
++        }
++    }
++
++    @Override
++    public void removeRegistrationListener(IImsRegistrationListener listener) {
++        // 7.1 offers only setRegistrationListener, which REPLACES the single listener rather than
++        // detaching one of several. Calling it here would silently unhook whoever else registered,
++        // so do nothing and say so.
++        Log.d(TAG, "removeRegistrationListener ignored: 7.1 IImsService cannot detach a listener");
++    }
++
++    @Override
++    public ImsCallProfile createCallProfile(int sessionId, int callSessionType, int callType) {
++        try {
++            return Convert.toModern(
++                    legacy().createCallProfile(sessionId, callSessionType, callType));
++        } catch (RemoteException e) {
++            throw rethrow("createCallProfile", e);
++        }
++    }
++
++    @Override
++    public void turnOnIms() {
++        try {
++            legacy().turnOnIms(mSlotId);
++        } catch (RemoteException e) {
++            throw rethrow("turnOnIms", e);
++        }
++    }
++
++    @Override
++    public void turnOffIms() {
++        try {
++            legacy().turnOffIms(mSlotId);
++        } catch (RemoteException e) {
++            throw rethrow("turnOffIms", e);
++        }
++    }
++
++    @Override
++    public void setUiTTYMode(int uiTtyMode, Message onComplete) {
++        try {
++            legacy().setUiTTYMode(mServiceId, uiTtyMode, onComplete);
++        } catch (RemoteException e) {
++            throw rethrow("setUiTTYMode", e);
++        }
++    }
++
++    // --- Not yet bridged -------------------------------------------------------------------
++    // Each returns or consumes a 7.1 sub-interface where the modern side wants the 13 interface of
++    // the same name with a different method set, so each needs a wrapper -- and the corresponding
++    // legacy .aidl filled in with its real method order first (see the note in those files).
++    // Throwing is deliberate: returning null defers the failure to somewhere unrelated.
++
++    @Override
++    public IImsCallSession createCallSession(int sessionId, ImsCallProfile profile,
++            IImsCallSessionListener listener) {
++        throw new UnsupportedOperationException("createCallSession not bridged yet");
++    }
++
++    @Override
++    public IImsCallSession getPendingCallSession(int sessionId, String callId) {
++        throw new UnsupportedOperationException("getPendingCallSession not bridged yet");
++    }
++
++    @Override
++    public ImsUtImplBase getUtInterface() {
++        throw new UnsupportedOperationException("getUtInterface not bridged yet");
++    }
++
++    @Override
++    public IImsConfig getConfigInterface() {
++        throw new UnsupportedOperationException("getConfigInterface not bridged yet");
++    }
++
++    @Override
++    public ImsEcbmImplBase getEcbmInterface() {
++        throw new UnsupportedOperationException("getEcbmInterface not bridged yet");
++    }
++
++    @Override
++    public ImsMultiEndpointImplBase getMultiEndpointInterface() {
++        throw new UnsupportedOperationException("getMultiEndpointInterface not bridged yet");
++    }
++}
+diff --git a/ims-bridge/src/org/lineageos/ims/bridge/RegistrationListenerAdapter.java b/ims-bridge/src/org/lineageos/ims/bridge/RegistrationListenerAdapter.java
+new file mode 100644
+index 0000000..ce40146
+--- /dev/null
++++ b/ims-bridge/src/org/lineageos/ims/bridge/RegistrationListenerAdapter.java
+@@ -0,0 +1,82 @@
++package org.lineageos.ims.bridge;
++
++import android.net.Uri;
++import android.os.RemoteException;
++import android.util.Log;
++
++import org.codeaurora.ims.legacy.ImsReasonInfo;
++import org.codeaurora.ims.legacy.internal.IImsRegistrationListener;
++
++/**
++ * Presents the platform's modern registration listener to ims.apk as a 7.1 one.
++ *
++ * Ten of the eleven 7.1 callbacks exist unchanged on 13 and forward directly. The exception is
++ * registrationFeatureCapabilityChanged, which 13 dropped; it is logged and discarded rather than
++ * mapped onto something approximate. (13 gained registrationChangeFailed, which 7.1 never calls.)
++ */
++class RegistrationListenerAdapter extends IImsRegistrationListener.Stub {
++    private static final String TAG = ImsBridgeService.TAG;
++
++    private final com.android.ims.internal.IImsRegistrationListener mTarget;
++
++    RegistrationListenerAdapter(com.android.ims.internal.IImsRegistrationListener target) {
++        mTarget = target;
++    }
++
++    @Override
++    public void registrationConnected() throws RemoteException {
++        mTarget.registrationConnected();
++    }
++
++    @Override
++    public void registrationProgressing() throws RemoteException {
++        mTarget.registrationProgressing();
++    }
++
++    @Override
++    public void registrationConnectedWithRadioTech(int imsRadioTech) throws RemoteException {
++        mTarget.registrationConnectedWithRadioTech(imsRadioTech);
++    }
++
++    @Override
++    public void registrationProgressingWithRadioTech(int imsRadioTech) throws RemoteException {
++        mTarget.registrationProgressingWithRadioTech(imsRadioTech);
++    }
++
++    @Override
++    public void registrationDisconnected(ImsReasonInfo info) throws RemoteException {
++        mTarget.registrationDisconnected(Convert.toModern(info));
++    }
++
++    @Override
++    public void registrationResumed() throws RemoteException {
++        mTarget.registrationResumed();
++    }
++
++    @Override
++    public void registrationSuspended() throws RemoteException {
++        mTarget.registrationSuspended();
++    }
++
++    @Override
++    public void registrationServiceCapabilityChanged(int serviceClass, int event)
++            throws RemoteException {
++        mTarget.registrationServiceCapabilityChanged(serviceClass, event);
++    }
++
++    @Override
++    public void registrationFeatureCapabilityChanged(int serviceClass,
++            int[] enabledFeatures, int[] disabledFeatures) {
++        Log.d(TAG, "registrationFeatureCapabilityChanged dropped: no equivalent on 13");
++    }
++
++    @Override
++    public void voiceMessageCountUpdate(int count) throws RemoteException {
++        mTarget.voiceMessageCountUpdate(count);
++    }
++
++    @Override
++    public void registrationAssociatedUriChanged(Uri[] uris) throws RemoteException {
++        mTarget.registrationAssociatedUriChanged(uris);
++    }
++}

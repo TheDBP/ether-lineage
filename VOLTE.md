@@ -450,8 +450,19 @@ They are split across two jars, and the second one has a trap in it:
   them `com/android/ims`.
 
 The 7.1 definitions now in hand, for sizing step 3's bridge: `IImsService` 16 methods,
-`IImsCallSession` 28, `IImsUt` 18, `IImsConfig` 9; `ImsReasonInfo` 91 fields, `ImsCallProfile` 52,
-`ImsStreamMediaProfile` 38.
+`IImsCallSession` 28, `IImsUt` 18, `IImsConfig` 9.
+
+Those field counts are **not** a measure of work, and reading them as one overstates the bridge
+badly. Almost all of them are constants. Instance fields, which is what conversion copies:
+
+| | total members | instance fields |
+|---|---|---|
+| `ImsReasonInfo` | 91 | **3** |
+| `ImsCallProfile` | 52 | **5** |
+| `ImsStreamMediaProfile` | 38 | **4** |
+| `ImsSsInfo` / `ImsCallForwardInfo` / `ImsSuppServiceNotification` / `ImsConferenceState` | 38 | **15** |
+
+27 field copies across all seven.
 
 The APK subclasses seven Stubs -- `IImsService`, `IImsCallSession`, `IImsCallSessionListener`,
 `IImsConfig`, `IImsEcbm`, `IImsUt`, `IImsUtListener` -- so it *implements* these interfaces rather
@@ -503,6 +514,53 @@ both jars and both permission XMLs, which declare the libraries:
 `CNEServiceApp` and its handler; the rest are the cne library and protobuf-micro. That duplication is
 what stock shipped, since the odex we rebuilt from is stock's own. Do not "fix" it by trimming the
 apk to two classes: matching stock is the conservative choice and stock demonstrably worked.
+
+## Step 3: the bridge exists and compiles (2026-09-23)
+
+Patch 0019 adds `device/nextbit/ether/ims-bridge`, an `android_app` that presents ims.apk's 7.1
+`IImsService` to the modern stack through `android.telephony.ims.compat.ImsService`. It builds:
+`ImsBridge.apk` installs to `system/priv-app`.
+
+### The thing that makes it work at all
+
+The legacy interfaces are hand-written AIDL under `org.codeaurora.ims.legacy`, matching the rename
+already applied to the rebuilt apk. **Method order is load-bearing**: AIDL assigns transaction codes
+by declaration order, and the far end is stock's compiled 2016 binary, which cannot be recompiled to
+agree with us. The order is transcribed from that binary's `TRANSACTION_*` constants.
+
+Verified after building, by disassembling our own apk: the generated stub numbers `open`=1 through
+`getMultiEndpointInterface`=16, matching 7.1, and advertises the same renamed descriptor the apk
+does. Do not take this on faith after editing the .aidl -- re-check it.
+
+### What works and what does not
+
+Bridged: `startSession`/`endSession`, `isConnected`, `isOpened`, `addRegistrationListener`,
+`createCallProfile`, `turnOnIms`, `turnOffIms`, `setUiTTYMode`, plus the registration-listener
+adapter -- ten of eleven callbacks map directly; `registrationFeatureCapabilityChanged` has no 13
+equivalent and is dropped explicitly rather than approximated.
+
+Not bridged: the six methods that return or take a 7.1 sub-interface (`createCallSession`,
+`getPendingCallSession`, `getUtInterface`, `getConfigInterface`, `getEcbmInterface`,
+`getMultiEndpointInterface`). Each needs a wrapper, and its `.aidl` filled in with real method order
+first -- those files are deliberately empty and say so. They throw `UnsupportedOperationException`;
+returning null would defer the failure somewhere unrelated. **Calls will not work until these land** --
+`createCallSession` is the call path.
+
+### Two prerequisites that are not code
+
+Neither is optional and neither is in patch 0019 yet:
+
+1. **`android.hardware.telephony.ims` is not declared on this device.** `PhoneGlobals` only builds
+   an `ImsResolver` when `PackageManager.FEATURE_TELEPHONY_IMS` is present, so without it nothing
+   binds the bridge no matter how correct it is -- and there is no log line saying so. The feature
+   file exists as soong module `android.hardware.telephony.ims.prebuilt.xml`.
+2. **`config_ims_mmtel_package`** (a `packages/services/Telephony` resource, empty by default) must
+   name the bridge's package, or `ImsResolver` has no device default to bind.
+
+Also note `MMTelFeature` declares **no** `RemoteException` on any method while every legacy call
+throws it, so the conversion happens in the bridge; and its interface getters return
+`ImsUtImplBase`/`ImsEcbmImplBase`/`ImsMultiEndpointImplBase`, not the AIDL interfaces -- reading the
+signatures off a grep rather than the file gets this wrong.
 
 ## Wi-Fi calling (VoWiFi)
 
