@@ -615,6 +615,50 @@ surfaced only when the script ran from a different working directory and smali r
 **So the "step 2 done" result reported before this fix cannot be trusted** -- the verified numbers
 are the ones from after it. Read the file fully, then open for write; never both in one expression.
 
+## First flash of the bridge (build 8, 2026-09-23) -- two bugs, both mine
+
+The image built clean and flashed, and `org.codeaurora.ims` **installed** -- the deodexed, renamed
+apk is accepted by the platform, which is the first proof the whole rename approach works. Then:
+
+### system_server crash loop
+
+    java.lang.IllegalStateException: Signature|privileged permissions not in
+    privapp-permissions allowlist: {org.lineageos.ims.bridge
+      (android.permission.READ_PRIVILEGED_PHONE_STATE, MODIFY_PHONE_STATE)}
+      at PermissionManagerServiceImpl.onSystemReady
+
+A **priv-app** that requests a `signature|privileged` permission without a matching
+privapp-permissions allowlist entry makes PackageManagerService throw at `systemReady`. That kills
+`system_server` before boot completes, on every boot. The device looks like it is booting slowly; it
+is not. `sys.boot_completed` reaching 1 and then going back to empty, with zygote and system_server
+on high pids, is the tell.
+
+Both permissions were unnecessary: the bridge shares `android.uid.phone`, so it already runs with
+the phone process's granted permissions. Removed rather than allowlisted. If a future wrapper needs
+one, add it to the manifest **and** an allowlist together.
+
+Recovery without reflashing: `adb root && adb remount && rm -rf /system/priv-app/ImsBridge`, reboot.
+
+### The build tree and the patches had silently diverged
+
+The CNE re-enable (edits to patches 0001 and 0002) was verified by replaying the series onto a
+pristine base in a scratch directory -- and that check passed. But `_build_rom.sh` does **not** run
+`apply-overlay`; it builds whatever is in `device/nextbit/ether`, which still held the *old* commits.
+So build 8 shipped with no CNE HALs in `manifest.xml` and `cnd` still commented out, while the
+patches on disk were correct.
+
+**Editing a patch file does not change the build.** After editing any patch, reset the project to
+`BASE_REF` and re-run `apply-overlay`, then check the tree itself:
+
+    git -C device/nextbit/ether reset --hard <base>
+    ./forge/docker/aosp.sh bash -lc 'bash /repo/forge/tools/apply-overlay.sh /aosp'
+    grep -c quicinc.cne device/nextbit/ether/manifest.xml     # expect 2
+    grep -c '^service cnd' device/nextbit/ether/rootdir/init.qcom.rc
+
+A plain re-run of apply-overlay is not enough on its own: it skips patches whose subjects already
+appear in `BASE_REF..HEAD`, so an edited patch with an unchanged subject is skipped. The reset is
+the part that matters.
+
 ## Wi-Fi calling (VoWiFi)
 
 Same IMS stack, different transport: signalling goes through the same `org.codeaurora.ims` service,
