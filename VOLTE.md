@@ -5,7 +5,12 @@ T-Mobile / Mint (310/260). Nothing here ships until a call completes both ways w
 
 ## What exists
 
-- Modem: the 8992 modem image has the IMS stack and `mcfg_sw/generic/na/tmo/commerci/mcfg_sw.mbn`.
+- Modem: the RIL carries the IMS transport — `libril-qc-qmi-1.so` exports
+  `qcril_qmi_ims_socket_agent::{init_socket_listenfd,process_incoming_message,send_message}` over
+  `ims_MsgType`/`ims_MsgId`/`ims_Error` (1204 IMS strings), and the baseband is `M8992FAAAANAAM`.
+  **Unverified:** the specific `mcfg_sw/generic/na/tmo/commerci/mcfg_sw.mbn` carrier config. No modem
+  image is in the stock zip (only `venus.mbn`), and `/firmware` is not readable without root, so that
+  claim has no evidence behind it yet. It does not block step 4.
 - Stock ether 7.1.1 (`Ether_Stock_ROM_N108.zip`) ships the complete QTI IMS userspace, which the
   TheMuppets ether list omits: `vendor/app/ims/ims.apk` (`org.codeaurora.ims`, dex stripped into
   `oat/arm64/ims.odex`), `vendor/app/imssettings/`, `bin/{imsqmidaemon,imsdatadaemon,ims_rtp_daemon,imscmservice}`,
@@ -21,9 +26,13 @@ The QTI `ims.apk` (7.1 on ether, 8.1 on bullhead, same design) is the pre-P IMS 
 `android:process="com.android.phone"`, no intent-filter, registers itself with
 `ServiceManager.addService("ims")` implementing `com.android.ims.internal.IImsService`. Android 9
 deleted that binding path. `ImsServiceControllerCompat` on 13 binds only the 8.0 dynamic
-`IImsMMTelFeature` API, which this APK does not implement. LineageOS bullhead commit `5cef16f`
-("Disable pre-P IMS stack — does not work at all and kills our dialer", lineage-16.0) is the
-same wall.
+`IImsMMTelFeature` API, which this APK does not implement. That class and `MmTelFeatureCompatAdapter`
+live in **`frameworks/opt/telephony`** (`src/java/com/android/internal/telephony/ims/`), not in
+`frameworks/opt/net/ims`; `ImsResolver` there still scans for compat ImsServices on 13, so the
+binding path the bridge targets is alive. LineageOS bullhead commit `5cef16f`
+("Disable pre-P IMS stack", body: "Does not work at all and kills our dialer", lineage-16.0) is the
+same wall — and note it changed only `lineage-proprietary-blobs-vendor.txt`, one line: upstream did
+not attempt a bridge, they stopped shipping the APK.
 
 The APK's framework surface is small: `com.android.ims.{ImsCallProfile,ImsReasonInfo,ImsSsInfo,
 ImsCallForwardInfo,ImsConferenceState,ImsStreamMediaProfile,ImsSuppServiceNotification,ImsConfigListener}`
@@ -136,7 +145,7 @@ IMS_SYMLINKS := $(addprefix $(TARGET_OUT_VENDOR)/app/ims/lib/arm64/,$(notdir $(I
 2. `ims-legacy` Java library: the 7.1 parcelables + AIDLs under the renamed package, built from
    AOSP 7.1 `frameworks/base/telephony/java/com/android/ims/` (Apache 2). Boot classpath or
    `uses-library` injected into the rebuilt manifest.
-3. Bridge in `frameworks/opt/net/ims`: `IImsService` → `IImsMMTelFeature` (near 1:1 method map,
+3. Bridge (a new service; the compat adapters it hands off to are in `frameworks/opt/telephony`): `IImsService` → `IImsMMTelFeature` (near 1:1 method map,
    serviceId held by the bridge). Wrap each crossing interface (call session, listeners, UT, ECBM,
    config, registration, multi-endpoint, video provider) and copy parcelables field-wise.
    `MmTelFeatureCompatAdapter` + `ImsServiceControllerCompat` take it from there; the bridge
@@ -171,6 +180,25 @@ images); the stock ether zip, which is the primary source, is unaffected and sti
 | `bullhead-factory/bullhead-opm7.181205.001/ext/{system,vendor}` | stock 8.1 for a second `ims.apk` (platformBuildVersionCode 27) if the 7.1 one deodexes badly |
 | `vendor_lge_bullhead-16.0/bullhead/proprietary/` | TheMuppets 16.0 blob set; `ims.apk` deliberately excluded upstream |
 | `vendor_lge_bullhead-17.1/` | TheMuppets 17.1 (trimmed set) |
+
+## Verification
+
+`./verify-volte-plan.sh` checks every factual claim above against the tree, the stock blobs and the
+bullhead reference — 21 checks, PASS/FAIL each, non-zero exit on any failure.
+
+Re-verified 2026-09-23 until clean twice in a row. The first pass found three defects, all now
+fixed above:
+
+- the modem `mcfg_sw` claim had no evidence behind it (no modem image in the stock zip,
+  `/firmware` unreadable without root) and is now marked unverified;
+- `ImsServiceControllerCompat` and `MmTelFeatureCompatAdapter` were placed in
+  `frameworks/opt/net/ims`; they are in `frameworks/opt/telephony`;
+- bullhead `5cef16f` changed only the blobs list — upstream never attempted a bridge, so "it does
+  not work" is evidence about the APK, not about the approach.
+
+One defect was in the checker rather than the plan, found by pointing it at missing inputs: C4d
+("the service has no intent-filter") passed vacuously on an empty manifest dump. It now requires
+the service element to exist first. **Negative-test this script before trusting a clean run.**
 
 ## Rules
 
