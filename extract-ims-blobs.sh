@@ -21,8 +21,13 @@ LIST="$(cd "$(dirname "$0")" && pwd)/proprietary-files-ims.txt"
 [ -d "$AOSP" ] || { echo "!! no such tree: $AOSP" >&2; exit 1; }
 [ -f "$LIST" ] || { echo "!! missing $LIST" >&2; exit 1; }
 
-DEST="$AOSP/vendor/extra/ims-blobs"
-REL="vendor/extra/ims-blobs"
+# NOT vendor/extra: apply-overlay does "rm -rf vendor/extra" at the start of every build, so anything
+# staged there before bootstrap runs is deleted at step [4/5] and the image silently ships without
+# it. The oem option survives only because bootstrap runs its extractor at [4b], AFTER that clear.
+# This tool is run by hand before a build, so it needs a directory nobody wipes -- and it clears its
+# own, which is what the vendor/extra clear was protecting against.
+DEST="$AOSP/vendor/ims-blobs"
+REL="vendor/ims-blobs"
 TMP="${TMPDIR:-$AOSP/out/tmp}/ims-extract.$$"
 rm -rf "$DEST" "$TMP"; mkdir -p "$DEST" "$TMP" || exit 1
 trap 'rm -rf "$TMP"' EXIT
