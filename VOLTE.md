@@ -161,6 +161,26 @@ Mixing is not free. Bullhead's 16.0 blobs came off an 8.1 image and ether's off 
 that matter talk to `libril-qc-qmi-1.so`, which is ether's. Prefer ether's own files; reach for
 bullhead's only for a specific file that will not work, and say so when you do.
 
+## Does this carry forward?
+
+Checked upstream 2026-09-23. The 8.0 compat binding path — the thing the bridge targets — is still
+present on **lineage-21.0 (Android 14)** and **lineage-22.2 (Android 15)**:
+
+| | 21.0 | 22.2 |
+|---|---|---|
+| `ImsServiceControllerCompat` | present | present |
+| `MmTelFeatureCompatAdapter` | present | present |
+| `android.telephony.ims.compat.ImsService` | present | present |
+
+So a bridge written against 13 is not a one-release dead end; the surface it binds to survives at
+least two releases past it. That does not promise the bridge itself ports cleanly — the `internal`
+AIDL signatures move between releases and that is exactly what the bridge has to translate — but the
+approach is not being deprecated out from under us.
+
+Decision (2026-09-23): use **ether's own** stack from the stock zip throughout. The bullhead 8.1
+`ims.apk` stays a fallback to fetch on demand — Google publishes the factory image — and is not kept
+locally.
+
 ## Approach
 
 1. Deodex `ims.odex` (baksmali `x`), rename `com.android.ims.*` → `org.codeaurora.ims.legacy.*` in
