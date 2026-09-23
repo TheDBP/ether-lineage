@@ -284,6 +284,53 @@ the bottom of `proprietary-files-ims.txt`, for two independent reasons:
 So step 4 is daemons, libraries and configs — which is exactly what its milestone tests. The apps
 contribute nothing to "do the daemons stay up and does QMI_DAEMON_STATUS flip".
 
+## Step 4 results on hardware (2026-09-23)
+
+Flashed and measured. **The hard parts work.**
+
+| | |
+|---|---|
+| `imsqmidaemon` | **running**, stays up, no crash loop |
+| `sys.ims.QMI_DAEMON_STATUS` | **1** — it reached the modem |
+| `/dev/socket/ims_qmid` | created, `u:object_r:ims_socket:s0` |
+| `imscmservice` | **running** |
+| `imsdatadaemon` | starts and runs when started by hand |
+| `ims_rtp_daemon` | was restart-looping — missing library, now fixed |
+
+So 7.1-era blobs load and execute under Android 13's linker namespaces, and the modem handshake
+completes. That was the risk rated highest going in.
+
+### Three denial-derived rules (sepolicy/ims_ether.te)
+
+```
+allow ims self:capability net_raw;          imsdatadaemon
+get_prop(ims, default_prop)                 both daemons
+get_prop(vendor_init, qcom_ims_prop)        THE blocker
+```
+
+The last one is why the chain stalled: the handshake triggers live in a vendor init file, so
+`vendor_init` evaluates them, and it was denied reading the very property they test. **Init registers
+`on property:` actions at parse time**, so one denial at early boot drops the action for the lifetime
+of init — `setenforce 0` afterwards does not bring it back, which is why this cannot be validated at
+runtime and needs a rebuild.
+
+Also note the qcom legacy policy is **not** a superset of bullhead's: it owns the types, labels and
+contexts, but not `net_raw`, which bullhead granted and I removed as "already covered".
+
+### Resolve dependencies, do not grep names
+
+`ims_rtp_daemon` restart-looped with:
+
+```
+CANNOT LINK EXECUTABLE "/vendor/bin/ims_rtp_daemon": library "lib-rtpsl.so" not found
+```
+
+Five libraries were missing — `lib-rtpsl`, `lib-rtpcore`, `lib-rtpdaemoninterface`, `lib-rtpcommon`,
+`lib-dplmedia` — because the inventory was built by matching names like `lib-ims*`, and none of
+these look like IMS. `lib-dplmedia` is second-order and no pattern would have caught it. The list is
+now 53 entries, derived from the daemons' actual `NEEDED` closure, and `verify-volte-plan.sh` checks
+that closure so this class cannot recur.
+
 ## Scoreboard
 
 daemons stay up → `sys.ims.QMI_DAEMON_STATUS=1` → `service list` shows `ims` → bridge bound

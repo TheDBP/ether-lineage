@@ -39,7 +39,7 @@ miss=$(wc -l < $MISSING 2>/dev/null || echo 0)
 ck "C2  58 IMS files absent from the vendor set ($miss)" "$([ "$miss" -eq 58 ] && echo 1 || echo 0)"
 ent=$(grep -cvE '^\s*(#|$)' "$R/proprietary-files-ims.txt" 2>/dev/null || echo 0)
 def_=$(grep -cE '^#(vendor/app|priv-app|framework)/' "$R/proprietary-files-ims.txt" 2>/dev/null || echo 0)
-ck "C2b step-4 list has 43 active entries ($ent)"  "$([ "$ent" -eq 43 ] && echo 1 || echo 0)"
+ck "C2b step-4 list has 53 active entries ($ent)"  "$([ "$ent" -eq 53 ] && echo 1 || echo 0)"
 ck "C2c 15 deferred to steps 1-3 ($def_)"          "$([ "$def_" -eq 15 ] && echo 1 || echo 0)"
 
 # C3 carrier config patch
@@ -120,7 +120,7 @@ ck "S4d no comment inside a continuation"    "$([ -s "$RC" ] && [ -s "$DT/Androi
 # NOTE: apply-overlay clears vendor/extra at the start of every build, so the S5 checks only mean
 # anything after extract-ims-blobs.sh has run. Re-stage before trusting them.
 MK="$SRC/vendor/ims-blobs/ims-blobs.mk"
-ck "S5  blobs staged (43 files)"             "$([ "$(find "$SRC/vendor/ims-blobs" -type f ! -name '*.mk' 2>/dev/null | wc -l)" = 43 ] && echo 1 || echo 0)"
+ck "S5  blobs staged (53 files)"             "$([ "$(find "$SRC/vendor/ims-blobs" -type f ! -name '*.mk' 2>/dev/null | wc -l)" = 53 ] && echo 1 || echo 0)"
 # APKs must NOT be staged: PRODUCT_COPY_FILES rejects them outright, and ims.apk is dex-stripped
 # so importing it alone installs a shell with no code.
 ck "S5b no APK in the generated fragment"    "$([ -s "$MK" ] && ! grep -q '\.apk' "$MK" 2>/dev/null && echo 1 || echo 0)"
@@ -129,6 +129,29 @@ ck "S5f all four daemons in the fragment"    "$([ "$(grep -cE 'vendor/bin/(imsqm
 ck "S5c system-side entries go to SYSTEM"    "$(grep -q 'etc/permissions/qcrilhook.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/permissions/qcrilhook.xml' "$MK" 2>/dev/null && echo 1 || echo 0)"
 ck "S5d daemons go to VENDOR"                "$(grep -q 'vendor/bin/imsqmidaemon:$(TARGET_COPY_OUT_VENDOR)/bin/imsqmidaemon' "$MK" 2>/dev/null && echo 1 || echo 0)"
 ck "S5e last mk line has no trailing backslash" "$([ -s "$MK" ] && { tail -1 "$MK" | grep -q '\\$' && echo 0 || echo 1; } || echo 0)"
+
+# Every library the daemons NEED must be shipped or already in the vendor set. Name-matching missed
+# five (lib-rtp*, lib-dplmedia) and ims_rtp_daemon restart-looped on "CANNOT LINK EXECUTABLE".
+_unmet=$(python3 - "$SRC" "$W" 2>/dev/null <<'PYEOF'
+import os,sys,subprocess
+SRC,W=sys.argv[1],sys.argv[2]
+stage=os.path.join(SRC,'vendor/ims-blobs'); vend=os.path.join(SRC,'vendor/nextbit/ether/proprietary')
+have={os.path.basename(f) for r,_,fs in os.walk(stage) for f in fs}
+have|={os.path.basename(f) for r,_,fs in os.walk(vend) for f in fs}
+plat=('libc.so','libm.so','libdl.so','libc++.so','liblog.so','libcutils.so','libutils.so','libbinder.so','libdiag.so','libidl.so','libwpa_client.so')
+miss=set()
+for d in ('imsqmidaemon','imsdatadaemon','ims_rtp_daemon','imscmservice'):
+    p=os.path.join(W,'system/bin',d)
+    if not os.path.exists(p): continue
+    out=subprocess.run(['readelf','-d',p],capture_output=True,text=True).stdout
+    for l in out.splitlines():
+        if 'NEEDED' not in l: continue
+        n=l.split('[')[1].split(']')[0]
+        if n not in have and n not in plat: miss.add(n)
+print(len(miss))
+PYEOF
+)
+ck "S6  every daemon NEEDED is shipped (${_unmet:-?} unmet)" "$([ "${_unmet:-1}" = 0 ] && echo 1 || echo 0)"
 
 echo
 [ "$fail" -eq 0 ] && echo "RESULT: CLEAN" || echo "RESULT: $fail FAILURE(S)"

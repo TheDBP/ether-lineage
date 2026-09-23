@@ -5,6 +5,12 @@
 ## The QMI/RIL transport these talk to (libqmi*, libril-qc-qmi-1.so) is already in
 ## proprietary-files.txt and is NOT repeated here.
 ##
+## The lib-rtp*/lib-dplmedia entries do not look like IMS and were missed by name-matching: they
+## came from resolving what the daemons actually NEED, transitively. ims_rtp_daemon restart-looped
+## with "CANNOT LINK EXECUTABLE ... library lib-rtpsl.so not found" until they were added, and
+## lib-dplmedia is a second-order dependency that no name pattern would have caught. Resolve
+## dependencies, do not grep names.
+##
 ## STEP 4 SET ONLY: daemons, libraries and configs. The apps and the framework jars are commented
 ## out at the bottom -- they cannot be shipped as they are. ims.apk is 27 KB against a 2.3 MB
 ## ims.odex because its dex is stripped OUT into the odex, so importing the apk alone installs a
@@ -21,6 +27,11 @@ bin/imsqmidaemon:vendor/bin/imsqmidaemon
 bin/ims_rtp_daemon:vendor/bin/ims_rtp_daemon
 
 # IMS libraries (64-bit)
+vendor/lib64/lib-dplmedia.so
+vendor/lib64/lib-rtpcommon.so
+vendor/lib64/lib-rtpcore.so
+vendor/lib64/lib-rtpdaemoninterface.so
+vendor/lib64/lib-rtpsl.so
 vendor/lib64/libcneqmiutils.so
 vendor/lib64/libimscamera_jni.so
 vendor/lib64/lib-imscamera.so
@@ -39,6 +50,11 @@ vendor/lib64/lib-imsxml.so
 vendor/lib64/lib-rcsimssjni.so
 
 # IMS libraries (32-bit)
+vendor/lib/lib-dplmedia.so
+vendor/lib/lib-rtpcommon.so
+vendor/lib/lib-rtpcore.so
+vendor/lib/lib-rtpdaemoninterface.so
+vendor/lib/lib-rtpsl.so
 vendor/lib/libcneqmiutils.so
 vendor/lib/libimscamera_jni.so
 vendor/lib/lib-imscamera.so
