@@ -73,6 +73,62 @@ IMEI. The Robin (Nextbit, 2016, never VoLTE-certified on T-Mobile) almost certai
 there is no cheap way to test that before IMS registration works -- which is the last milestone on
 the scoreboard, not the first. Treat it as the reason the three-session budget exists.
 
+## What bullhead supplies (re-fetched 2026-09-23)
+
+Bullhead is a Nexus 5X: **same msm8992**, same QTI IMS generation, and LineageOS carried a working
+IMS wiring for it at 16.0. `upstream-reference/device_lge_bullhead` (lineage-16.0, 12 MB clone) has
+every piece step 4 needs.
+
+**init** (`init.bullhead.rc:426`) — note it defines only TWO daemons, not the four in the stock zip:
+
+```
+service imsqmidaemon /system/bin/imsqmidaemon
+    class main
+    user system
+    socket ims_qmid stream 0660 system radio
+    group radio net_raw log diag
+
+service imsdatadaemon /system/bin/imsdatadaemon
+    class main
+    user system
+    socket ims_datad stream 0660 system radio
+    group system wifi radio inet net_raw log diag net_admin
+    disabled
+
+on property:sys.ims.QMI_DAEMON_STATUS=1
+    start imsdatadaemon
+```
+
+**sepolicy** — `sepolicy/ims.te` is a complete domain (`init_daemon_domain`, `net_raw`/`net_admin`,
+`create_socket_perms`, `allowxperm ... msm_sock_ipc_ioctls`, `set_prop(ims, qcom_ims_prop)`,
+`unix_socket_connect` to cnd and netd, `qmux_socket(ims)`), supported by:
+
+| file | what it adds |
+|---|---|
+| `file.te` | `type ims_socket, file_type;` |
+| `property.te` | `type qcom_ims_prop, property_type;` |
+| `radio.te` | `allow radio ims_socket:sock_file write;` (and a commented-out `#HACK` connectto) |
+| `property_contexts` | `sys.ims.` → `qcom_ims_prop` |
+| `file_contexts` | both sockets → `ims_socket`, both daemons → `ims_exec` |
+
+**Android.mk:49** — the bit that is easy to miss: the APK's JNI libraries are **symlinked** into
+`vendor/app/ims/lib/arm64/`, because the app looks for them there rather than in the normal lib path.
+
+```
+IMS_LIBS := libimscamera_jni.so libimsmedia_jni.so
+IMS_SYMLINKS := $(addprefix $(TARGET_OUT_VENDOR)/app/ims/lib/arm64/,$(notdir $(IMS_LIBS)))
+```
+
+### Porting caveats, 16.0 → 20.0
+
+- `device_domain_deprecated` does not exist on 13. Drop it and add what the denials actually ask for.
+- Bullhead runs the daemons from `/system/bin`; ours land in `vendor/bin`, so every `file_contexts`
+  path and the service paths change.
+- The `#HACK` comment on `radio → ims:unix_stream_socket connectto` is a hint that they hit
+  something there; expect to need it and to have to justify it.
+- 13's neverallows are stricter than 9's. Treat the policy as a starting point to be re-derived from
+  denials, not as something to paste.
+
 ## Approach
 
 1. Deodex `ims.odex` (baksmali `x`), rename `com.android.ims.*` → `org.codeaurora.ims.legacy.*` in
@@ -104,7 +160,7 @@ Budget: three sessions. No registration by the end of the third → park it, doc
 
 Outside every repo, never pushed. `upstream-reference/` sits beside the device repos; the stock zip is gitignored in the repo root:
 
-**`upstream-reference/` was deleted in the 2026-09-23 disk prune.** Everything in it is public and
+**`upstream-reference/` was deleted in the 2026-09-23 disk prune, and `device_lge_bullhead` has been re-fetched since.** Everything in it is public and
 re-fetchable (LineageOS `device_lge_bullhead`, TheMuppets `vendor_lge_bullhead`, Google factory
 images); the stock ether zip, which is the primary source, is unaffected and still in the repo root.
 
