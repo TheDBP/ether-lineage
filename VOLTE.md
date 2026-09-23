@@ -364,10 +364,23 @@ It is waiting for a SIM. Confirmed with root, not inferred:
   `INVALID_MODEM_STATE`. `ModemActivityInfo` reports `mRat=UNKNOWN` with `mTxTimeMs=[0,0,0,0,0]` and
   sleep/idle counters frozen across minutes -- the modem has never transmitted.
 
-So everything under our control is working and **stage two is blocked on hardware only: put a
-working SIM in the Robin**. Patch 0011 already closed with "Cellular is still untested; there is no
-SIM in the device" -- that is still the gate. Nothing further can be learned about
-`DATA_DAEMON_STATUS` without one.
+**Superseded the same day, once a SIM went in.** The SIM was needed to test, but it was not the
+cause of the stall.
+
+With a Mint (T-Mobile MVNO, 310240) card in, a cold boot of this exact build registers in under ten
+seconds -- `operator=Mint`, `LTE`, `registrationState=HOME`, `mDataRegState=0(IN_SERVICE)` -- and
+LTE data passes, 0% loss at ~37 ms. LTE data is **not** broken by the IMS work.
+
+And `sys.ims.DATA_DAEMON_STATUS` is *still* unset. `imsdatadaemon` sits in `poll_schedule_timeout`
+with utime/stime frozen at 0/2 while a working data connection is up. So stage two is not waiting on
+a data call, and not waiting on a SIM. It is blocked above the data layer -- the IMS framework
+service (`ims.apk`, still dex-stripped, steps 1-3) or CNE. Chase those, not the radio.
+
+One transient to recognise rather than re-debug: registration can read `NOT_REG_SEARCHING` with
+`cellIdentity=null` and every RIL request returning `INVALID_MODEM_STATE` purely because a **manual
+network scan is running** -- the modem deregisters while it scans. Count `is_nw_scan 1` in the radio
+log before concluding anything: 29 during the stuck period, 0 on the clean boot. Stopping the IMS
+daemons appeared to fix it and did not; they re-register fine with all three running.
 
 Do not read `sys.ims.*` with `getprop` from a shell and believe the answer: those properties are
 typed `qcom_ims_prop` and shell has no read access, so they come back **empty whether set or not**
