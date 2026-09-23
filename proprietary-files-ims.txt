@@ -4,6 +4,15 @@
 ## disabled the pre-P IMS stack (bullhead 5cef16f). Kept here for the VoLTE work -- see VOLTE.md.
 ## The QMI/RIL transport these talk to (libqmi*, libril-qc-qmi-1.so) is already in
 ## proprietary-files.txt and is NOT repeated here.
+##
+## STEP 4 SET ONLY: daemons, libraries and configs. The apps and the framework jars are commented
+## out at the bottom -- they cannot be shipped as they are. ims.apk is 27 KB against a 2.3 MB
+## ims.odex because its dex is stripped OUT into the odex, so importing the apk alone installs a
+## shell with no code, and a 7.1 odex is meaningless against 13's boot image. Deodexing and
+## rebuilding them is steps 1-3; until then they stay out of the image.
+##
+## They also cannot go in PRODUCT_COPY_FILES at all:
+##   build/make/core/Makefile:72: error: Prebuilt apk found in PRODUCT_COPY_FILES
 
 # IMS daemons
 bin/imscmservice:vendor/bin/imscmservice
@@ -53,24 +62,26 @@ vendor/lib/libril-qcril-hook-oem.so
 vendor/lib/librilqmiservices.so
 
 # IMS apps
-priv-app/qcrilmsgtunnel/oat/arm64/qcrilmsgtunnel.odex
-priv-app/qcrilmsgtunnel/qcrilmsgtunnel.apk
-vendor/app/ims/ims.apk
-vendor/app/ims/oat/arm64/ims.odex
-vendor/app/imssettings/imssettings.apk
-vendor/app/imssettings/oat/arm64/imssettings.odex
 
 # IMS framework
-framework/arm64/boot-ims-common.art
-framework/arm64/boot-ims-common.oat
-framework/arm/boot-ims-common.art
-framework/arm/boot-ims-common.oat
-framework/ims-common.jar
-framework/oat/arm64/qcrilhook.odex
-framework/oat/arm/qcrilhook.odex
-framework/qcrilhook.jar
-framework/rcsimssettings.jar
 
 # IMS config
 etc/diag_ims.cfg
 etc/permissions/qcrilhook.xml
+
+# ---- deferred to steps 1-3 (see VOLTE.md): dex-stripped apps and 7.1 boot-image artifacts ----
+#priv-app/qcrilmsgtunnel/oat/arm64/qcrilmsgtunnel.odex
+#priv-app/qcrilmsgtunnel/qcrilmsgtunnel.apk
+#vendor/app/ims/ims.apk
+#vendor/app/ims/oat/arm64/ims.odex
+#vendor/app/imssettings/imssettings.apk
+#vendor/app/imssettings/oat/arm64/imssettings.odex
+#framework/arm64/boot-ims-common.art
+#framework/arm64/boot-ims-common.oat
+#framework/arm/boot-ims-common.art
+#framework/arm/boot-ims-common.oat
+#framework/ims-common.jar
+#framework/oat/arm64/qcrilhook.odex
+#framework/oat/arm/qcrilhook.odex
+#framework/qcrilhook.jar
+#framework/rcsimssettings.jar

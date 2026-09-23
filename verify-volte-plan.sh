@@ -36,9 +36,11 @@ ck "C1b no modem image in the stock zip (claim marked unverified)" "$([ "$z" -eq
 
 # C2 inventory
 miss=$(wc -l < $MISSING 2>/dev/null || echo 0)
-ck "C2  58 missing IMS files ($miss)" "$([ "$miss" -eq 58 ] && echo 1 || echo 0)"
+ck "C2  58 IMS files absent from the vendor set ($miss)" "$([ "$miss" -eq 58 ] && echo 1 || echo 0)"
 ent=$(grep -cvE '^\s*(#|$)' "$R/proprietary-files-ims.txt" 2>/dev/null || echo 0)
-ck "C2b proprietary-files-ims.txt has 58 entries ($ent)" "$([ "$ent" -eq 58 ] && echo 1 || echo 0)"
+def_=$(grep -cE '^#(vendor/app|priv-app|framework)/' "$R/proprietary-files-ims.txt" 2>/dev/null || echo 0)
+ck "C2b step-4 list has 43 active entries ($ent)"  "$([ "$ent" -eq 43 ] && echo 1 || echo 0)"
+ck "C2c 15 deferred to steps 1-3 ($def_)"          "$([ "$def_" -eq 15 ] && echo 1 || echo 0)"
 
 # C3 carrier config patch
 p=$(ls "$R"/overlay/patches/device/nextbit/ether/0004-*.patch 2>/dev/null | head -1)
@@ -118,9 +120,13 @@ ck "S4d no comment inside a continuation"    "$([ -s "$RC" ] && [ -s "$DT/Androi
 # NOTE: apply-overlay clears vendor/extra at the start of every build, so the S5 checks only mean
 # anything after extract-ims-blobs.sh has run. Re-stage before trusting them.
 MK="$SRC/vendor/ims-blobs/ims-blobs.mk"
-ck "S5  blobs staged (58 files)"             "$([ "$(find "$SRC/vendor/ims-blobs" -type f ! -name '*.mk' 2>/dev/null | wc -l)" = 58 ] && echo 1 || echo 0)"
-ck "S5b ims.apk + odex staged"               "$([ -s "$SRC/vendor/ims-blobs/vendor/app/ims/ims.apk" ] && [ -s "$SRC/vendor/ims-blobs/vendor/app/ims/oat/arm64/ims.odex" ] && echo 1 || echo 0)"
-ck "S5c framework jars go to SYSTEM not VENDOR" "$(grep -q 'framework/ims-common.jar:$(TARGET_COPY_OUT_SYSTEM)/framework/ims-common.jar' "$MK" 2>/dev/null && echo 1 || echo 0)"
+ck "S5  blobs staged (43 files)"             "$([ "$(find "$SRC/vendor/ims-blobs" -type f ! -name '*.mk' 2>/dev/null | wc -l)" = 43 ] && echo 1 || echo 0)"
+# APKs must NOT be staged: PRODUCT_COPY_FILES rejects them outright, and ims.apk is dex-stripped
+# so importing it alone installs a shell with no code.
+ck "S5b no APK in the generated fragment"    "$([ -s "$MK" ] && ! grep -q '\.apk' "$MK" 2>/dev/null && echo 1 || echo 0)"
+ck "S5f all four daemons in the fragment"    "$([ "$(grep -cE 'vendor/bin/(imsqmidaemon|imsdatadaemon|ims_rtp_daemon|imscmservice):' "$MK" 2>/dev/null)" = 4 ] && echo 1 || echo 0)"
+# the destination decides the partition, not the source: etc/ is system-side, vendor/ is not
+ck "S5c system-side entries go to SYSTEM"    "$(grep -q 'etc/permissions/qcrilhook.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/permissions/qcrilhook.xml' "$MK" 2>/dev/null && echo 1 || echo 0)"
 ck "S5d daemons go to VENDOR"                "$(grep -q 'vendor/bin/imsqmidaemon:$(TARGET_COPY_OUT_VENDOR)/bin/imsqmidaemon' "$MK" 2>/dev/null && echo 1 || echo 0)"
 ck "S5e last mk line has no trailing backslash" "$([ -s "$MK" ] && { tail -1 "$MK" | grep -q '\\$' && echo 0 || echo 1; } || echo 0)"
 

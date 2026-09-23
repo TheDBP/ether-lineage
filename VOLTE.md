@@ -206,7 +206,7 @@ Written, not yet built or booted.
 
 | piece | where |
 |---|---|
-| blob list, 58 entries | `proprietary-files-ims.txt` |
+| blob list | `proprietary-files-ims.txt` — 43 active (step 4), 15 deferred to steps 1-3 |
 | staging | `extract-ims-blobs.sh` → `vendor/extra/ims-blobs/` + a generated `ims-blobs.mk` |
 | init (4 daemons), JNI symlinks, device.mk include | device patch `0018` |
 
@@ -267,6 +267,22 @@ Two lessons. Search the **whole tree** whitespace-tolerantly before declaring a 
 `device/nextbit/ether/sepolicy/file.te` already carries a comment warning that `type  proc_dirty_ratio`
 with two spaces defeats a naive grep, and the same trap caught this. And a vendored qcom policy on a
 QTI device has probably already solved anything QTI-generic; check there before writing it.
+
+### What step 4 actually ships
+
+**43 files, not 58.** The apps and framework jars are deferred to steps 1-3 and commented out at
+the bottom of `proprietary-files-ims.txt`, for two independent reasons:
+
+- `ims.apk` is **27 KB** against a **2.3 MB** `ims.odex` — its dex is stripped *out* into the odex.
+  Importing the apk alone installs a shell with no code, and a 7.1 odex means nothing to 13's ART.
+  Deodexing and rebuilding it is step 1; until then it must not be in the image.
+- An APK cannot go in `PRODUCT_COPY_FILES` at all:
+  `build/make/core/Makefile:72: error: Prebuilt apk found in PRODUCT_COPY_FILES`.
+  Prebuilt apps need `android_app_import` modules, which is the right shape *after* step 1 produces
+  an apk with dex in it.
+
+So step 4 is daemons, libraries and configs — which is exactly what its milestone tests. The apps
+contribute nothing to "do the daemons stay up and does QMI_DAEMON_STATUS flip".
 
 ## Scoreboard
 
