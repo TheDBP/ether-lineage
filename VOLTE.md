@@ -546,9 +546,9 @@ first -- those files are deliberately empty and say so. They throw `UnsupportedO
 returning null would defer the failure somewhere unrelated. **Calls will not work until these land** --
 `createCallSession` is the call path.
 
-### Two prerequisites that are not code
+### Two prerequisites that are not code -- landed in 0020
 
-Neither is optional and neither is in patch 0019 yet:
+Neither is optional:
 
 1. **`android.hardware.telephony.ims` is not declared on this device.** `PhoneGlobals` only builds
    an `ImsResolver` when `PackageManager.FEATURE_TELEPHONY_IMS` is present, so without it nothing
@@ -561,6 +561,38 @@ Also note `MMTelFeature` declares **no** `RemoteException` on any method while e
 throws it, so the conversion happens in the bridge; and its interface getters return
 `ImsUtImplBase`/`ImsEcbmImplBase`/`ImsMultiEndpointImplBase`, not the AIDL interfaces -- reading the
 signatures off a grep rather than the file gets this wrong.
+
+## Shipping it (patch 0020, 2026-09-23)
+
+Built and installed, all three signed or staged correctly:
+
+    system/vendor/app/ims/ims.apk                          324,682 B, 325 classes
+    system/priv-app/ImsBridge/ImsBridge.apk                  41,374 B
+    system/vendor/etc/permissions/android.hardware.telephony.ims.prebuilt.xml
+
+`ims.apk` is **generated, never committed** -- it is a proprietary blob derived from the user's own
+stock zip. `extract-ims-blobs.sh` now runs `deodex-app.sh` and `rebuild-app.sh` after staging the 53
+blobs, drops the result at `vendor/ims-blobs/ims/ims.apk`, and writes an `android_app_import`
+alongside it. It cannot go in `PRODUCT_COPY_FILES`: AOSP rejects APKs there outright.
+
+Both apks must carry the platform certificate, because both declare `android.uid.phone` and Android
+refuses a shared uid across mismatched signatures. Verified: identical cert
+`93:76:E9:...:75:27`, matching `platform.x509.pem`.
+
+Do not compare signing keys by hashing `META-INF/CERT.RSA`. It is a PKCS#7 blob holding a *per-file
+signature*, so it differs between two apks signed with the same key, and reads exactly like proof
+they were signed with different ones. Extract the certificate:
+`openssl pkcs7 -inform DER -print_certs | openssl x509 -noout -fingerprint -sha256`.
+
+### A bug that invalidated an earlier result
+
+`rebuild-app.sh` had `open(p,'w').write(rewrite(open(p).read()))`. Python evaluates `open(p,'w')`
+first, truncating the file, so `rewrite()` received `''` and every rewritten smali was blanked. It
+surfaced only when the script ran from a different working directory and smali reported
+`required (...)+ loop did not match anything at input ''` across 226 files.
+
+**So the "step 2 done" result reported before this fix cannot be trusted** -- the verified numbers
+are the ones from after it. Read the file fully, then open for write; never both in one expression.
 
 ## Wi-Fi calling (VoWiFi)
 

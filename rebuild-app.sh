@@ -80,11 +80,16 @@ shutil.copytree(f'{W}/smali',out)
 for dp,_,fns in os.walk(out):
     for fn in fns:
         if fn.endswith('.smali'):
-            p=os.path.join(dp,fn); open(p,'w').write(rewrite(open(p).read()))
+            p=os.path.join(dp,fn)
+            # Read fully, THEN write. open(p,'w') truncates as soon as it is evaluated, so doing
+            # both in one expression hands rewrite() an empty string and silently blanks the file.
+            txt=open(p).read()
+            open(p,'w').write(rewrite(txt))
 for c in seen:
     d=os.path.join(out,NEW_P+c[len(OLD_P):]+'.smali')
     os.makedirs(os.path.dirname(d),exist_ok=True)
-    open(d,'w').write(rewrite(open(idx[c]).read()))
+    src_txt=open(idx[c]).read()
+    open(d,'w').write(rewrite(src_txt))
 bad=[os.path.join(dp,fn) for dp,_,fns in os.walk(out) for fn in fns
      if fn.endswith('.smali') and 'L'+OLD_P in open(os.path.join(dp,fn)).read()]
 print(f"   legacy classes merged: {len(seen)}")
