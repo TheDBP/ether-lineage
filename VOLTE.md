@@ -35,6 +35,27 @@ AIDLs carry 13 signatures, so the APK cannot load against the boot classpath as-
 Modem transport is a unix socket to QCRIL (`ImsQmiIF` protobuf), served by `libril-qc-qmi-1.so`
 with `imsqmidaemon` — all ether's own blobs.
 
+## Inventory (2026-09-23)
+
+Extracted from the stock zip and compared against what `vendor/nextbit/ether` already carries.
+`proprietary-files-ims.txt` in this repo is the resulting list: **58 files, 35 MB**.
+
+| | count | note |
+|---|---|---|
+| already present | 21 | the whole QMI/RIL transport: `libqmi*`, `libril-qc-qmi-1.so`, `libril-qcril-hook-oem`, `librilqmiservices` |
+| missing — daemons | 4 | `imsqmidaemon`, `imsdatadaemon`, `ims_rtp_daemon`, `imscmservice` |
+| missing — libs | 37 | 16 × 64-bit, 21 × 32-bit (`lib-ims*`, `libims*_jni`, `lib-rcsims*`, `libcneqmiutils`) |
+| missing — apps | 6 | `ims.apk`+odex, `imssettings`+odex, `qcrilmsgtunnel`+odex |
+| missing — framework | 9 | `ims-common.jar`, `qcrilhook.jar`, `rcsimssettings.jar`, `boot-ims-common.{oat,art}` ×2 arches, `qcrilhook.odex` ×2 arches |
+| missing — etc | 2 | `diag_ims.cfg`, `permissions/qcrilhook.xml` |
+
+The useful half of that: **the modem transport is already in the build**. `libril-qc-qmi-1.so` — the
+RIL that serves the `ImsQmiIF` protobuf socket the daemons talk to — ships today. What is absent is
+only the IMS userspace above it, which is what upstream deliberately dropped.
+
+Nothing here is pinned: every file comes from the same stock image named in the header of
+`proprietary-files.txt`.
+
 ## Approach
 
 1. Deodex `ims.odex` (baksmali `x`), rename `com.android.ims.*` → `org.codeaurora.ims.legacy.*` in
@@ -65,6 +86,10 @@ Budget: three sessions. No registration by the end of the third → park it, doc
 ## Reference material
 
 Outside every repo, never pushed. `upstream-reference/` sits beside the device repos; the stock zip is gitignored in the repo root:
+
+**`upstream-reference/` was deleted in the 2026-09-23 disk prune.** Everything in it is public and
+re-fetchable (LineageOS `device_lge_bullhead`, TheMuppets `vendor_lge_bullhead`, Google factory
+images); the stock ether zip, which is the primary source, is unaffected and still in the repo root.
 
 | path | what |
 |---|---|
