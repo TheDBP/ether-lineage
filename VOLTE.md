@@ -371,8 +371,13 @@ With a Mint (T-Mobile MVNO, 310240) card in, a cold boot of this exact build reg
 seconds -- `operator=Mint`, `LTE`, `registrationState=HOME`, `mDataRegState=0(IN_SERVICE)` -- and
 LTE data passes, 0% loss at ~37 ms. LTE data is **not** broken by the IMS work.
 
-SMS, visual voicemail and calling were all confirmed working on this build by hand, so the 53 IMS
-blobs and the four new init services regress nothing the released branch already did.
+SMS and visual voicemail were confirmed working on this build by hand, so the 53 IMS blobs and the
+four new init services regress nothing the released branch already did.
+
+**Voice calls do not work**, as expected. There is no IMS registration -- `ims_rtp_daemon` never
+starts -- and Mint rides T-Mobile, which retired 3G in 2022 and 2G in 2024, so there is no CSFB
+fallback either. The README's "voice needs 2G/3G" framing holds, and on this carrier that means
+voice needs VoLTE. This is the thing the remaining work buys.
 
 Service later came up fully -- `mVoiceRegState=0(IN_SERVICE)` as well as data -- whether because
 the scan ended or because the network took its time authorising the device. Either way it is stable.
