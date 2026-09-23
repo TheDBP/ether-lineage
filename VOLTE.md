@@ -371,7 +371,10 @@ With a Mint (T-Mobile MVNO, 310240) card in, a cold boot of this exact build reg
 seconds -- `operator=Mint`, `LTE`, `registrationState=HOME`, `mDataRegState=0(IN_SERVICE)` -- and
 LTE data passes, 0% loss at ~37 ms. LTE data is **not** broken by the IMS work.
 
-And `sys.ims.DATA_DAEMON_STATUS` is *still* unset. `imsdatadaemon` sits in `poll_schedule_timeout`
+Service later came up fully -- `mVoiceRegState=0(IN_SERVICE)` as well as data -- whether because
+the scan ended or because the network took its time authorising the device. Either way it is stable.
+
+And `sys.ims.DATA_DAEMON_STATUS` is *still* unset, with **voice and data both IN_SERVICE**. `imsdatadaemon` sits in `poll_schedule_timeout`
 with utime/stime frozen at 0/2 while a working data connection is up. So stage two is not waiting on
 a data call, and not waiting on a SIM. It is blocked above the data layer -- the IMS framework
 service (`ims.apk`, still dex-stripped, steps 1-3) or CNE. Chase those, not the radio.
