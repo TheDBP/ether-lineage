@@ -398,6 +398,39 @@ typed `qcom_ims_prop` and shell has no read access, so they come back **empty wh
 (`avc: denied { read } scontext=u:r:shell:s0 tcontext=u:object_r:qcom_ims_prop:s0`, and `libc:
 Access denied finding property`). Read the init action from logcat instead -- that is ground truth.
 
+## Step 1 done: the odex is back to editable smali (2026-09-23)
+
+`deodex-ims.sh <stock.zip> <workdir>` reproduces all of it. baksmali/smali come from the Android
+tree itself -- `prebuilts/extract-tools/common/smali/` -- so nothing has to be fetched.
+
+The odex is an ART OAT, so its instructions are resolved against the boot image it was compiled
+against; baksmali needs that same `system/framework/arm64` boot classpath to turn them back into
+portable smali. Result: **226 smali files, 188 of them `org.codeaurora.ims`**, including
+`org.codeaurora.ims.ImsService`.
+
+Two checks that matter more than the file count, both in the script as hard failures:
+
+- **leftover odex opcodes: 0.** baksmali leaves `invoke-*-quick` / `iget-quick` in place when it
+  cannot resolve them. A partial deodex still assembles and still installs; it fails at runtime.
+  Count the quick opcodes, do not assume.
+- **round-trip reassembles**: smali -> dex succeeds on the untouched output, 188 classes. Prove the
+  toolchain before editing anything, or a later failure has two possible causes instead of one.
+
+### What step 2 has to build
+
+The APK references **22 distinct `com.android.ims.*` outer types**. Checked against this tree:
+
+| still present on 13 | `ImsException` (frameworks/base/telephony), `ImsManager` (frameworks/opt/net/ims) |
+|---|---|
+| **gone -- must be rebuilt** | the other **20**: `ImsCallProfile`, `ImsReasonInfo`, `ImsSsInfo`, `ImsCallForwardInfo`, `ImsConferenceState`, `ImsStreamMediaProfile`, `ImsSuppServiceNotification`, `ImsConfigListener`, and the twelve `internal/` AIDL interfaces (`IImsService`, `IImsCallSession`, `IImsCallSessionListener`, `IImsUt`, `IImsUtListener`, `IImsConfig`, `IImsEcbm`, `IImsEcbmListener`, `IImsMultiEndpoint`, `IImsRegistrationListener`, `IImsVideoCallProvider`, `ImsVideoCallProvider`) |
+
+The two survivors do not help as-is: they carry 13 signatures, and the APK expects 7.1. Renaming the
+whole set into `org.codeaurora.ims.legacy.*` as planned sidesteps both the collision and the
+signature drift, so all 22 get built, not 20.
+
+Weight is concentrated: `ImsReasonInfo` (345 refs), `ImsCallProfile` (297), `IImsCallSession` (295)
+and `IImsUt` (159) are over half of all references. Get those four right first.
+
 ## Wi-Fi calling (VoWiFi)
 
 Same IMS stack, different transport: signalling goes through the same `org.codeaurora.ims` service,
