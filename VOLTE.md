@@ -353,10 +353,21 @@ Stage two does not fire: `imsdatadaemon` never sets `sys.ims.DATA_DAEMON_STATUS`
 stays down. It is not crashing and not spinning -- `state=S`, `wchan=poll_schedule_timeout`, utime/stime
 frozen at 0/2 across samples. It is idle, waiting.
 
-Waiting for a SIM, most likely: `gsm.sim.state=CARD_IO_ERROR`, `ril.radiostate` empty,
-`gsm.operator.alpha` empty. With no card registered there is no data call for the data daemon to
-report on. **Stage two cannot be tested on this device until a working SIM is in it** -- if a SIM
-*is* inserted, then `CARD_IO_ERROR` is itself the bug to chase and it sits below IMS entirely.
+It is waiting for a SIM. Confirmed with root, not inferred:
+
+- The modem subsystem is **up**. `/dev/smdcntl0` exists -- per patch 0011 that node only appears once
+  the subsystem boots -- `ether_modem_hold` (the 0011 service) holds `/dev/subsys_modem` open as
+  designed, and there are **zero** `smdcntl0 ... timed out` / `unable to connect to server` errors,
+  which is 0011's failure signature. rild runs and services requests.
+- There is no card. `UiccProfile: setExternalState ... CARD_IO_ERROR`, `icc_operator_numeric=` empty,
+  `subId not valid for Phone 0`, `eUICC not enabled`, and every RIL request returns
+  `INVALID_MODEM_STATE`. `ModemActivityInfo` reports `mRat=UNKNOWN` with `mTxTimeMs=[0,0,0,0,0]` and
+  sleep/idle counters frozen across minutes -- the modem has never transmitted.
+
+So everything under our control is working and **stage two is blocked on hardware only: put a
+working SIM in the Robin**. Patch 0011 already closed with "Cellular is still untested; there is no
+SIM in the device" -- that is still the gate. Nothing further can be learned about
+`DATA_DAEMON_STATUS` without one.
 
 Do not read `sys.ims.*` with `getprop` from a shell and believe the answer: those properties are
 typed `qcom_ims_prop` and shell has no read access, so they come back **empty whether set or not**
