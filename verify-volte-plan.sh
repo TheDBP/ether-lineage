@@ -105,17 +105,21 @@ ck "S3f legacy policy has sys.ims. context"  "$(grep -rq 'sys.ims.' "$QS"/*/prop
 ck "S3g legacy grants set_prop(ims,...)"     "$(grep -q 'set_prop(ims, qcom_ims_prop)' "$QS/common/ims.te" 2>/dev/null && echo 1 || echo 0)"
 
 # build wiring
-ck "S4  device.mk includes ims-blobs.mk"     "$(grep -q 'vendor/extra/ims-blobs/ims-blobs.mk' "$DT/device.mk" 2>/dev/null && echo 1 || echo 0)"
-ck "S4b Android.mk symlinks the JNI libs"    "$(grep -q 'IMS_SYMLINKS' "$DT/Android.mk" 2>/dev/null && echo 1 || echo 0)"
+ck "S4  device.mk includes vendor/ims-blobs/ims-blobs.mk" "$(grep -q 'include vendor/ims-blobs/ims-blobs.mk' "$DT/device.mk" 2>/dev/null && echo 1 || echo 0)"
+# the tree and the PATCH must agree: an unstaged tree edit is replayed over at the next build, which
+# is how the include kept pointing at vendor/extra while the tree looked right
+ck "S4a patch 0018 carries the same path"    "$([ -s "$P18" ] && grep -q '^+.*include vendor/ims-blobs/ims-blobs.mk' "$P18" 2>/dev/null && echo 1 || echo 0)"
+ck "S4b patch 0018 does NOT mention vendor/extra/ims-blobs" "$([ -s "$P18" ] && ! grep -q '^+.*vendor/extra/ims-blobs' "$P18" 2>/dev/null && echo 1 || echo 0)"
+ck "S4c Android.mk symlinks the JNI libs"    "$(grep -q 'IMS_SYMLINKS' "$DT/Android.mk" 2>/dev/null && echo 1 || echo 0)"
 # a comment between a backslash line and its continuation silently breaks make and shell alike
-ck "S4c no comment inside a continuation"    "$([ -s "$RC" ] && [ -s "$DT/Android.mk" ] && [ -s "$DT/device.mk" ] && { for f in "$RC" "$DT/Android.mk" "$DT/device.mk"; do awk '/\\$/{p=1;next} p&&/^[[:space:]]*#/{print "x"} {p=0}' "$f" 2>/dev/null; done | grep -q x && echo 0 || echo 1; } || echo 0)"
+ck "S4d no comment inside a continuation"    "$([ -s "$RC" ] && [ -s "$DT/Android.mk" ] && [ -s "$DT/device.mk" ] && { for f in "$RC" "$DT/Android.mk" "$DT/device.mk"; do awk '/\\$/{p=1;next} p&&/^[[:space:]]*#/{print "x"} {p=0}' "$f" 2>/dev/null; done | grep -q x && echo 0 || echo 1; } || echo 0)"
 
 # staged blobs
 # NOTE: apply-overlay clears vendor/extra at the start of every build, so the S5 checks only mean
 # anything after extract-ims-blobs.sh has run. Re-stage before trusting them.
-MK="$SRC/vendor/extra/ims-blobs/ims-blobs.mk"
-ck "S5  blobs staged (58 files)"             "$([ "$(find "$SRC/vendor/extra/ims-blobs" -type f ! -name '*.mk' 2>/dev/null | wc -l)" = 58 ] && echo 1 || echo 0)"
-ck "S5b ims.apk + odex staged"               "$([ -s "$SRC/vendor/extra/ims-blobs/vendor/app/ims/ims.apk" ] && [ -s "$SRC/vendor/extra/ims-blobs/vendor/app/ims/oat/arm64/ims.odex" ] && echo 1 || echo 0)"
+MK="$SRC/vendor/ims-blobs/ims-blobs.mk"
+ck "S5  blobs staged (58 files)"             "$([ "$(find "$SRC/vendor/ims-blobs" -type f ! -name '*.mk' 2>/dev/null | wc -l)" = 58 ] && echo 1 || echo 0)"
+ck "S5b ims.apk + odex staged"               "$([ -s "$SRC/vendor/ims-blobs/vendor/app/ims/ims.apk" ] && [ -s "$SRC/vendor/ims-blobs/vendor/app/ims/oat/arm64/ims.odex" ] && echo 1 || echo 0)"
 ck "S5c framework jars go to SYSTEM not VENDOR" "$(grep -q 'framework/ims-common.jar:$(TARGET_COPY_OUT_SYSTEM)/framework/ims-common.jar' "$MK" 2>/dev/null && echo 1 || echo 0)"
 ck "S5d daemons go to VENDOR"                "$(grep -q 'vendor/bin/imsqmidaemon:$(TARGET_COPY_OUT_VENDOR)/bin/imsqmidaemon' "$MK" 2>/dev/null && echo 1 || echo 0)"
 ck "S5e last mk line has no trailing backslash" "$([ -s "$MK" ] && { tail -1 "$MK" | grep -q '\\$' && echo 0 || echo 1; } || echo 0)"

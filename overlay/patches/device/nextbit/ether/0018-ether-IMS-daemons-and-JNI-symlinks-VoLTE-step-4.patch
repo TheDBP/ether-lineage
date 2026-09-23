@@ -1,18 +1,18 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Wed, 23 Sep 2026 13:13:08 -0400
+Date: Wed, 23 Sep 2026 14:15:48 -0400
 Subject: [PATCH] ether: IMS daemons and JNI symlinks (VoLTE step 4)
 
-init.target.rc gets the four IMS services from ether's own stock ramdisk -- imsqmidaemon, then
+init.target.rc gets the four IMS services from ether's own stock ramdisk: imsqmidaemon, then
 imsdatadaemon on sys.ims.QMI_DAEMON_STATUS, then ims_rtp_daemon on sys.ims.DATA_DAEMON_STATUS, plus
 imscmservice. Paths are /vendor/bin.
 
-No sepolicy: device/qcom/sepolicy-legacy already carries the whole IMS policy, and declaring any of
-it again fails the build with 'Duplicate declaration of type'.
+No sepolicy: device/qcom/sepolicy-legacy already carries the whole IMS policy, and redeclaring any
+of it fails the build with 'Duplicate declaration of type'.
 
 Android.mk symlinks the JNI libraries into vendor/app/ims/lib/arm64. device.mk -includes
 vendor/ims-blobs/ims-blobs.mk -- NOT vendor/extra, which apply-overlay deletes at the start of every
-build, so blobs staged there before bootstrap never reach the image.
+build, so anything staged there before bootstrap never reaches the image.
 ---
  Android.mk             | 15 +++++++++++++++
  device.mk              |  4 ++++
@@ -44,7 +44,7 @@ index b5e39d7..1983362 100644
 +
  endif
 diff --git a/device.mk b/device.mk
-index 7d47f14..40c4092 100644
+index 7d47f14..01cc2fb 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -335,6 +335,10 @@ endif
@@ -54,7 +54,7 @@ index 7d47f14..40c4092 100644
 +
 +# IMS / VoLTE blobs, staged out of the stock zip by extract-ims-blobs.sh. -include, because the
 +# file only exists when that script has run: a build without it is simply a build without IMS.
-+-include vendor/extra/ims-blobs/ims-blobs.mk
++-include vendor/ims-blobs/ims-blobs.mk
  ifeq ($(WITH_OEM),true)
  ifneq ($(OEM_DEFAULT_WALLPAPER),)
  ether_def_wallpaper := $(OEM_DEFAULT_WALLPAPER)
