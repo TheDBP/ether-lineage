@@ -56,6 +56,23 @@ only the IMS userspace above it, which is what upstream deliberately dropped.
 Nothing here is pinned: every file comes from the same stock image named in the header of
 `proprietary-files.txt`.
 
+## Carrier-side risk
+
+Separate from anything in this repo: T-Mobile provisions VoLTE against a device allowlist keyed on
+IMEI/TAC, and Mint is an MVNO on that network. A device that is not on the list can be refused IMS
+registration no matter how correct the software is, so the whole scoreboard can pass and still end
+at "the network says no".
+
+What is known, 2026-09-23: **VoLTE and VoWiFi both work on bonito (Pixel 3a XL) on Mint, running our
+own unofficial lineage-24.0 build.** That rules out one component of the risk -- the carrier is not
+gating on stock firmware, a certified build, or an untampered bootloader. A custom ROM registers
+fine.
+
+It does not rule out the component that matters here: bonito is a Pixel and is on the allowlist by
+IMEI. The Robin (Nextbit, 2016, never VoLTE-certified on T-Mobile) almost certainly is not, and
+there is no cheap way to test that before IMS registration works -- which is the last milestone on
+the scoreboard, not the first. Treat it as the reason the three-session budget exists.
+
 ## Approach
 
 1. Deodex `ims.odex` (baksmali `x`), rename `com.android.ims.*` → `org.codeaurora.ims.legacy.*` in
