@@ -76,6 +76,46 @@ ck "C9  bullhead sepolicy/ims.te exists"    "$([ -f "$B/sepolicy/ims.te" ] && ec
 ck "C9b ims_socket + qcom_ims_prop types"   "$(grep -q 'type ims_socket' "$B/sepolicy/file.te" 2>/dev/null && grep -q 'type qcom_ims_prop' "$B/sepolicy/property.te" 2>/dev/null && echo 1 || echo 0)"
 ck "C10 Android.mk IMS_SYMLINKS"            "$(grep -q 'IMS_SYMLINKS' "$B/Android.mk" 2>/dev/null && echo 1 || echo 0)"
 
+
+# ---------------------------------------------------------------- step 4: the stack we built
+P18=$(ls "$R"/overlay/patches/device/nextbit/ether/0018-*.patch 2>/dev/null | head -1)
+DT="$SRC/device/nextbit/ether"
+RC="$DT/rootdir/init.target.rc"
+ck "S1  patch 0018 exported"                 "$([ -n "$P18" ] && echo 1 || echo 0)"
+ck "S1b patch 0018 has no local paths"       "$([ -s "$P18" ] && ! grep -qE '/home/|/media/Storage|NBQGLMB' "$P18" 2>/dev/null && echo 1 || echo 0)"
+
+# the four daemons, from ether's own stock init -- not bullhead's two
+for d in imsqmidaemon imsdatadaemon ims_rtp_daemon imscmservice; do
+  ck "S2  init: service $d at /vendor/bin"   "$(grep -q "^service $d /vendor/bin/$d\$" "$RC" 2>/dev/null && echo 1 || echo 0)"
+done
+ck "S2b init: QMI_DAEMON_STATUS starts imsdatadaemon"  "$(grep -A1 'sys.ims.QMI_DAEMON_STATUS=1'  "$RC" 2>/dev/null | grep -q 'start imsdatadaemon'  && echo 1 || echo 0)"
+ck "S2c init: DATA_DAEMON_STATUS starts ims_rtp_daemon" "$(grep -A1 'sys.ims.DATA_DAEMON_STATUS=1' "$RC" 2>/dev/null | grep -q 'start ims_rtp_daemon' && echo 1 || echo 0)"
+ck "S2d init: the two chained daemons are disabled"    "$([ "$(awk '/^service (imsdatadaemon|ims_rtp_daemon) /{f=1} f&&/^ *disabled/{n++; f=0} END{print n+0}' "$RC" 2>/dev/null)" = 2 ] && echo 1 || echo 0)"
+
+# sepolicy
+ck "S3  sepolicy/ims.te exists"              "$([ -f "$DT/sepolicy/ims.te" ] && echo 1 || echo 0)"
+# strip comments first: ims.te names device_domain_deprecated in a comment explaining its absence,
+# and grepping the whole file reports the explanation as the problem
+ck "S3b ims.te drops device_domain_deprecated (gone on 13)" "$([ -s "$DT/sepolicy/ims.te" ] && ! grep -vE '^[[:space:]]*#' "$DT/sepolicy/ims.te" 2>/dev/null | grep -q 'device_domain_deprecated' && echo 1 || echo 0)"
+ck "S3c ims_socket + qcom_ims_prop declared" "$(grep -q 'type ims_socket' "$DT/sepolicy/file.te" 2>/dev/null && grep -q 'type qcom_ims_prop' "$DT/sepolicy/property.te" 2>/dev/null && echo 1 || echo 0)"
+ck "S3d file_contexts labels all 4 daemons"  "$([ "$(grep -cE '/bin/(imsqmidaemon|imsdatadaemon|ims_rtp_daemon|imscmservice) ' "$DT/sepolicy/file_contexts" 2>/dev/null)" = 4 ] && echo 1 || echo 0)"
+ck "S3e file_contexts labels all 3 sockets"  "$([ "$(grep -cE '/dev/socket/ims_(qmid|datad|rtpd)' "$DT/sepolicy/file_contexts" 2>/dev/null)" = 3 ] && echo 1 || echo 0)"
+ck "S3f sys.ims. property context"           "$(grep -q 'sys.ims.' "$DT/sepolicy/property_contexts" 2>/dev/null && echo 1 || echo 0)"
+
+# build wiring
+ck "S4  device.mk includes ims-blobs.mk"     "$(grep -q 'vendor/extra/ims-blobs/ims-blobs.mk' "$DT/device.mk" 2>/dev/null && echo 1 || echo 0)"
+ck "S4b Android.mk symlinks the JNI libs"    "$(grep -q 'IMS_SYMLINKS' "$DT/Android.mk" 2>/dev/null && echo 1 || echo 0)"
+# a comment between a backslash line and its continuation silently breaks make and shell alike
+ck "S4c no comment inside a continuation"    "$([ -s "$RC" ] && [ -s "$DT/Android.mk" ] && [ -s "$DT/device.mk" ] && { for f in "$RC" "$DT/Android.mk" "$DT/device.mk"; do awk '/\\$/{p=1;next} p&&/^[[:space:]]*#/{print "x"} {p=0}' "$f" 2>/dev/null; done | grep -q x && echo 0 || echo 1; } || echo 0)"
+
+# staged blobs
+MK="$SRC/vendor/extra/ims-blobs/ims-blobs.mk"
+ck "S5  blobs staged (58 files)"             "$([ "$(find "$SRC/vendor/extra/ims-blobs" -type f ! -name '*.mk' 2>/dev/null | wc -l)" = 58 ] && echo 1 || echo 0)"
+ck "S5b ims.apk + odex staged"               "$([ -s "$SRC/vendor/extra/ims-blobs/vendor/app/ims/ims.apk" ] && [ -s "$SRC/vendor/extra/ims-blobs/vendor/app/ims/oat/arm64/ims.odex" ] && echo 1 || echo 0)"
+ck "S5c framework jars go to SYSTEM not VENDOR" "$(grep -q 'framework/ims-common.jar:$(TARGET_COPY_OUT_SYSTEM)/framework/ims-common.jar' "$MK" 2>/dev/null && echo 1 || echo 0)"
+ck "S5d daemons go to VENDOR"                "$(grep -q 'vendor/bin/imsqmidaemon:$(TARGET_COPY_OUT_VENDOR)/bin/imsqmidaemon' "$MK" 2>/dev/null && echo 1 || echo 0)"
+ck "S5e last mk line has no trailing backslash" "$([ -s "$MK" ] && { tail -1 "$MK" | grep -q '\\$' && echo 0 || echo 1; } || echo 0)"
+
 echo
 [ "$fail" -eq 0 ] && echo "RESULT: CLEAN" || echo "RESULT: $fail FAILURE(S)"
 exit $fail
