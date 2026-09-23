@@ -424,9 +424,39 @@ The APK references **22 distinct `com.android.ims.*` outer types**. Checked agai
 |---|---|
 | **gone -- must be rebuilt** | the other **20**: `ImsCallProfile`, `ImsReasonInfo`, `ImsSsInfo`, `ImsCallForwardInfo`, `ImsConferenceState`, `ImsStreamMediaProfile`, `ImsSuppServiceNotification`, `ImsConfigListener`, and the twelve `internal/` AIDL interfaces (`IImsService`, `IImsCallSession`, `IImsCallSessionListener`, `IImsUt`, `IImsUtListener`, `IImsConfig`, `IImsEcbm`, `IImsEcbmListener`, `IImsMultiEndpoint`, `IImsRegistrationListener`, `IImsVideoCallProvider`, `ImsVideoCallProvider`) |
 
-The two survivors do not help as-is: they carry 13 signatures, and the APK expects 7.1. Renaming the
-whole set into `org.codeaurora.ims.legacy.*` as planned sidesteps both the collision and the
-signature drift, so all 22 get built, not 20.
+**That table was wrong and is corrected below** -- it searched only for `.java`, and most of these
+types are `.aidl`. The real count on 13 is 14 present, 8 absent (the parcelables, which moved to
+`android.telephony.ims.*`). It does not matter either way, because the 13 copies carry 13
+signatures and the APK expects 7.1, so all 22 get rebuilt under `org.codeaurora.ims.legacy.*`
+regardless.
+
+### Step 2's inputs come from the device, not from AOSP
+
+The plan said to build these from an AOSP 7.1 checkout. Better source: **the stock boot image we
+already extract**. Those are the exact classes this APK was compiled against, so signatures match by
+construction instead of by guessing a release tag, and nothing has to be fetched. `deodex-ims.sh`
+now recovers them and hard-fails if any of the 22 is not found. All 22 are found.
+
+They are split across two jars, and the second one has a trap in it:
+
+- `ims-common.jar` (`boot-ims-common.oat`) -- 47 classes, the high-level helpers: `ImsManager`,
+  `ImsCall`, `ImsUt`, `ImsConfig`, `ImsEcbm`.
+- `framework.jar` (`boot-framework.oat`) -- the parcelables and the internal AIDL interfaces, in its
+  **second dex**. `baksmali x <oat>` disassembles only the *first* dex of a multi-dex oat and says
+  nothing about the rest, so asking `boot-framework.oat` for `com/android/ims` returns zero and reads
+  exactly like proof the classes are not there. Run `baksmali list dex` first, then address the entry
+  by appending the name it prints to the oat path as if the oat were a directory:
+  `boot-framework.oat//system/framework/framework.jar:classes2.dex`. That yields 3077 classes, 119 of
+  them `com/android/ims`.
+
+The 7.1 definitions now in hand, for sizing step 3's bridge: `IImsService` 16 methods,
+`IImsCallSession` 28, `IImsUt` 18, `IImsConfig` 9; `ImsReasonInfo` 91 fields, `ImsCallProfile` 52,
+`ImsStreamMediaProfile` 38.
+
+The APK subclasses seven Stubs -- `IImsService`, `IImsCallSession`, `IImsCallSessionListener`,
+`IImsConfig`, `IImsEcbm`, `IImsUt`, `IImsUtListener` -- so it *implements* these interfaces rather
+than calling them. `IImsCallSession` has 295 bare type references and **zero** member references.
+That is why the bridge wraps implementations rather than forwarding calls.
 
 Weight is concentrated: `ImsReasonInfo` (345 refs), `ImsCallProfile` (297), `IImsCallSession` (295)
 and `IImsUt` (159) are over half of all references. Get those four right first.

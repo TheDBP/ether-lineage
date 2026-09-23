@@ -49,3 +49,31 @@ echo "   reassembled, $c org.codeaurora.ims classes"
 echo ">> framework surface the APK expects (step 2 builds these)"
 grep -rhoE 'Lcom/android/ims[^;]*;' "$W/smali" 2>/dev/null | sed 's/^L//;s/;$//;s/\$.*//' | sort -u > "$W/surface.txt"
 echo "   $(wc -l < "$W/surface.txt") distinct types -> $W/surface.txt"
+
+# Step 2's inputs come from the device's own 7.1 boot image rather than an AOSP checkout: these are
+# the exact classes this APK was compiled against, so signatures match by construction instead of
+# by picking the right release tag. They are split across two jars.
+#
+# ims-common.jar holds the high-level helpers (ImsManager, ImsCall, ImsUt...). The parcelables and
+# the internal AIDL interfaces live in framework.jar -- and specifically in its SECOND dex.
+# `baksmali x <oat>` silently disassembles only the first dex of a multi-dex oat, so asking
+# boot-framework.oat for com/android/ims returns nothing and looks like proof the classes are
+# absent. Address the entry explicitly, using the name `baksmali list dex` prints, appended to the
+# oat path as if it were a directory.
+echo ">> recovering the 7.1 framework classes from the boot image"
+java -jar "$BK" x -d "$W/system/framework/arm64" "$W/system/framework/arm64/boot-ims-common.oat" \
+     -o "$W/legacy/ims-common" 2>/dev/null || exit 1
+java -jar "$BK" x -d "$W/system/framework/arm64" \
+     "$W/system/framework/arm64/boot-framework.oat//system/framework/framework.jar:classes2.dex" \
+     -o "$W/legacy/framework2" 2>/dev/null || exit 1
+echo "   ims-common: $(find "$W/legacy/ims-common" -name '*.smali' | wc -l) classes"
+echo "   framework classes2: $(find "$W/legacy/framework2" -name '*.smali' | wc -l) classes"
+
+echo ">> confirming every referenced type is recoverable"
+{ find "$W/legacy/ims-common" -name '*.smali' | sed "s#$W/legacy/ims-common/##"
+  find "$W/legacy/framework2" -name '*.smali' | sed "s#$W/legacy/framework2/##"; } \
+  | sed 's#\.smali$##;s/\$.*//' | LC_ALL=C sort -u > "$W/have.txt"
+miss=$(LC_ALL=C comm -23 <(LC_ALL=C sort -u "$W/surface.txt") "$W/have.txt")
+if [ -n "$miss" ]; then echo "!! not recoverable from the boot image:"; echo "$miss" | sed 's/^/   /'; exit 1; fi
+echo "   all $(wc -l < "$W/surface.txt") types present"
+
