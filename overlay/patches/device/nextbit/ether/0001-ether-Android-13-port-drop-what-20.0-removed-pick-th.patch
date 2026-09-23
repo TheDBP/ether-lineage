@@ -11,7 +11,7 @@ one fails the build or the boot rather than degrading:
   Snap / camera.msm8992     Snap is gone; the HAL module name is the survivor
   cryptfshw QSEE service    removed from LineageOS
   libhidltransport(.vendor) folded into libhidlbase; libhwbinder.vendor likewise
-  libcnefeatureconfig       gone with cnd
+  libcnefeatureconfig       no longer built on 13; cnd itself stays
   the local libhidl shim    upstream now provides it
   manifest.xml entries      for HALs that no longer exist
 
@@ -189,7 +189,7 @@ index ce771dd..3c70de2 100644
      <hal format="hidl">
          <name>android.hardware.sensors</name>
          <transport arch="32+64">passthrough</transport>
-@@ -182,33 +173,6 @@
+@@ -182,33 +173,24 @@
              <instance>default</instance>
          </interface>
      </hal>
@@ -202,28 +202,28 @@ index ce771dd..3c70de2 100644
 -            <instance>dpmQmiService</instance>
 -        </interface>
 -    </hal>
--    <hal format="hidl">
--        <name>com.quicinc.cne.api</name>
--        <transport>hwbinder</transport>
--        <version>1.0</version>
--        <interface>
--            <name>IApiService</name>
--            <instance>cnd</instance>
--        </interface>
--    </hal>
--    <hal format="hidl">
--        <name>com.quicinc.cne.server</name>
--        <transport>hwbinder</transport>
--        <version>2.0</version>
--        <interface>
--            <name>IServer</name>
--            <instance>cnd</instance>
--        </interface>
--    </hal>
+     <hal format="hidl">
+         <name>com.quicinc.cne.api</name>
+         <transport>hwbinder</transport>
+         <version>1.0</version>
+         <interface>
+             <name>IApiService</name>
+             <instance>cnd</instance>
+         </interface>
+     </hal>
+     <hal format="hidl">
+         <name>com.quicinc.cne.server</name>
+         <transport>hwbinder</transport>
+         <version>2.0</version>
+         <interface>
+             <name>IServer</name>
+             <instance>cnd</instance>
+         </interface>
+     </hal>
      <hal format="hidl">
          <name>vendor.lineage.livedisplay</name>
          <transport>hwbinder</transport>
-@@ -234,22 +198,4 @@
+@@ -234,22 +216,4 @@
              <instance>default</instance>
          </interface>
      </hal>

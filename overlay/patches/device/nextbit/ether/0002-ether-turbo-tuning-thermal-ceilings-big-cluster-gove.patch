@@ -301,29 +301,6 @@ index 633bfb6..6126513 100644
      # Boot time fs tune
      write /sys/block/mmcblk0/queue/read_ahead_kb 2048
      write /sys/block/mmcblk0rpmb/queue/read_ahead_kb 2048
-@@ -166,11 +191,17 @@ service perfd /system/vendor/bin/perfd
-     socket perfd seqpacket 0666 root system
-     writepid /dev/cpuset/system-background/tasks
- 
--service cnd /vendor/bin/cnd
--    class main
--    user system
--    group system wifi inet radio wakelock net_admin
--    writepid /dev/cpuset/system-background/tasks
-+# cnd (Qualcomm Connectivity Engine) DISABLED for ether.
-+# The 19KB /vendor/bin/cnd shim needs a proprietary Qualcomm app we do not ship:
-+#   Package not found: com.qualcomm.qti.cne  /  com.quicinc.cne.CNEService
-+# so it exits immediately and init respawns it forever -- 60 times in one boot, which is
-+# pure wasted CPU on a 2016 phone. Its HALs (com.quicinc.cne.api/server) are removed from
-+# manifest.xml for the same reason: declared with nothing to serve them.
-+#service cnd /vendor/bin/cnd
-+#    class main
-+#    user system
-+#    group system wifi inet radio wakelock net_admin
-+#    writepid /dev/cpuset/system-background/tasks
- 
- service dpmQmiMgr /vendor/bin/dpmQmiMgr
-     class main
 diff --git a/sepolicy/genfs_contexts b/sepolicy/genfs_contexts
 index cdf0212..77beccb 100644
 --- a/sepolicy/genfs_contexts
