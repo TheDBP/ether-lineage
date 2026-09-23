@@ -138,6 +138,29 @@ IMS_SYMLINKS := $(addprefix $(TARGET_OUT_VENDOR)/app/ims/lib/arm64/,$(notdir $(I
 - 13's neverallows are stricter than 9's. Treat the policy as a starting point to be re-derived from
   denials, not as something to paste.
 
+## Where these blobs can be got
+
+Checked 2026-09-23 against the public repos, not assumed.
+
+- **TheMuppets `proprietary_vendor_nextbit`** — the set our build already syncs — carries **zero**
+  IMS files for ether. The 21 files we already have are the QMI/RIL transport, nothing above it.
+- **TheMuppets `proprietary_vendor_lge` (bullhead, lineage-16.0)** publishes most of the stack for
+  the same msm8992: 15 libraries (`lib-ims*`, `libims*_jni`, `lib-rcs*`) and three daemons
+  (`imsqmidaemon`, `imsdatadaemon`, `ims_rtp_daemon`). `lineage-17.1` has none of it.
+- **`vendor/app/ims` is absent from the bullhead set too.** They publish the libraries and the
+  daemons and not the APK — the same file `5cef16f` removed, and the one thing the whole approach
+  turns on.
+- **Google's bullhead factory image** is a public download and does contain an `ims.apk`
+  (`platformBuildVersionCode` 27, 8.1). That is a different device's build of the same QTI stack.
+
+So: the stock ether zip is the only public source of **ether's own** `ims.apk`, `imscmservice`,
+`imssettings`, `qcrilmsgtunnel` and the framework jars. Everything else in the list exists publicly
+for a sibling device.
+
+Mixing is not free. Bullhead's 16.0 blobs came off an 8.1 image and ether's off 7.1, and the pieces
+that matter talk to `libril-qc-qmi-1.so`, which is ether's. Prefer ether's own files; reach for
+bullhead's only for a specific file that will not work, and say so when you do.
+
 ## Approach
 
 1. Deodex `ims.odex` (baksmali `x`), rename `com.android.ims.*` → `org.codeaurora.ims.legacy.*` in
