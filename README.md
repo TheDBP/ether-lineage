@@ -225,9 +225,9 @@ behaviour of its own.
 | preset | tag | adds over `clean` |
 |---|---|---|
 | `clean` | `turbo-clean` | nothing — this is the baseline |
-| `libre` | `turbo-libre` | `fdroid`, `fulguris`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `connectbot`, `linphone` |
+| `libre` | `turbo-libre` | `fdroid`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `connectbot`, `linphone` |
 | `robin` | `turbo-robin` | `oem`, `root` |
-| `full` | `turbo` | `fdroid`, `fulguris`, `gapps`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `connectbot`, `linphone` |
+| `full` | `turbo` | `fdroid`, `gapps`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `connectbot`, `linphone` |
 
 Every preset also carries the shared set, which is what makes this build look and behave the way
 it does regardless of which preset you pick:
@@ -255,7 +255,7 @@ work on any device rather than being wired into this tree.
 | `dark-default` | Default to dark theme |
 | `fdroid` | F-Droid app store + Privileged Extension (silent installs/updates) |
 | `firefox` | Firefox (Fennec F-Droid) as the browser, replacing Jelly — still available, but 320 MB staged, so no preset carries it now |
-| `fulguris` | Fulguris as the browser, replacing Jelly — a WebView browser, 9 MB where Fennec stages 320 MB |
+| `fulguris` | Fulguris as the browser, replacing Jelly — a WebView browser, 9 MB where Fennec stages 320 MB. **In no preset**: it overrides Jelly, so a preset carrying it ships the only browser in the image — and its first run asks you to accept a privacy policy and terms with nothing else able to open them. Dropping it restores Jelly. `EXTRA_OPTIONS=fulguris` to add it |
 | `connectbot` | ConnectBot: an SSH client with saved hosts, keys and port forwarding |
 | `linphone` | Linphone: a SIP client, for voice over data where the device has no VoLTE |
 | `gapps` | Google apps: Play Store and GMS from MindTheGapps, plus Google's versions of the stock apps |
