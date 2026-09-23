@@ -157,6 +157,32 @@ IMS_SYMLINKS := $(addprefix $(TARGET_OUT_VENDOR)/app/ims/lib/arm64/,$(notdir $(I
    `allow radio <ims service>:service_manager add`.
 5. Expect bionic mismatches (same class as `libperipheral_client`): `-z global` shims per daemon.
 
+## Step 4 status (2026-09-23)
+
+Written, not yet built or booted.
+
+| piece | where |
+|---|---|
+| blob list, 58 entries | `proprietary-files-ims.txt` |
+| staging | `extract-ims-blobs.sh` → `vendor/extra/ims-blobs/` + a generated `ims-blobs.mk` |
+| init, sepolicy, JNI symlinks | device patch `0018` |
+
+Staging goes to `vendor/extra` rather than `vendor/nextbit/ether` on purpose: that repo is synced
+from TheMuppets, which omits the IMS set deliberately, and blobs must never be committed anyway.
+`apply-overlay` clears `vendor/extra` per build, so nothing leaks between presets.
+
+Two things the script got wrong first, both worth keeping in mind for the next list:
+
+- the destination decides the partition, not the source. `framework/`, `priv-app/` and `etc/` are
+  system-side; forcing them to vendor produces an image where the IMS jars sit somewhere the boot
+  classpath never looks, and nothing complains.
+- the apks are odexed against the 7.1 boot image, so they are copied verbatim — never re-signed or
+  re-compiled by the build.
+
+Still missing before this can boot: `ims-blobs.mk` is not yet included by `device.mk`, and the four
+daemons the stock zip ships are more than the two bullhead starts (`ims_rtp_daemon` and
+`imscmservice` have no init entry — find out whether the APK starts them before adding any).
+
 ## Scoreboard
 
 daemons stay up → `sys.ims.QMI_DAEMON_STATUS=1` → `service list` shows `ims` → bridge bound
