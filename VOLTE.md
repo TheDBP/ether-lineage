@@ -208,7 +208,7 @@ Written, not yet built or booted.
 |---|---|
 | blob list, 58 entries | `proprietary-files-ims.txt` |
 | staging | `extract-ims-blobs.sh` → `vendor/extra/ims-blobs/` + a generated `ims-blobs.mk` |
-| init (4 daemons), sepolicy, JNI symlinks, device.mk include | device patch `0018` |
+| init (4 daemons), JNI symlinks, device.mk include | device patch `0018` |
 
 Staging goes to `vendor/extra` rather than `vendor/nextbit/ether` on purpose: that repo is synced
 from TheMuppets, which omits the IMS set deliberately, and blobs must never be committed anyway.
@@ -238,6 +238,35 @@ imscmservice: class main, no socket, always running
 the rest from bullhead was safe — but the second property handshake and the two extra services
 would have been missed entirely by following bullhead alone. **Read the target's own stock init
 before trusting a sibling's.**
+
+### sepolicy is already done
+
+Patch 0018 ships **no sepolicy at all**, and must not. `device/qcom/sepolicy-legacy`, which
+`BoardConfig.mk` includes, already carries the whole IMS policy:
+
+| | |
+|---|---|
+| `common/ims.te` | `type ims, domain`, `init_daemon_domain`, `net_domain`, `qmux_socket`, `set_prop(ims, qcom_ims_prop)` |
+| `common/file.te:127` | `type ims_socket, file_type;` |
+| `common/property.te:27` | `type qcom_ims_prop, property_type;` |
+| `common/property_contexts:31` | `sys.ims.` → `qcom_ims_prop` |
+| `common/file_contexts:197-199` | `imsqmidaemon`, `imsdatadaemon` → `ims_exec`; `ims_rtp_daemon` → **`hal_imsrtp_exec`** |
+| `legacy-common/file_contexts:13` | `imscmservice` → `ims_exec` |
+| `common/hal_imsrtp.te` | a separate domain for the RTP daemon |
+
+Writing our own duplicated it and failed the build outright:
+
+```
+device/nextbit/ether/sepolicy/file.te:17: ERROR 'Duplicate declaration of type'
+```
+
+The hand-written version was also *wrong*: it labelled `ims_rtp_daemon` as `ims_exec`, where the
+legacy policy gives it its own `hal_imsrtp` domain.
+
+Two lessons. Search the **whole tree** whitespace-tolerantly before declaring a sepolicy type —
+`device/nextbit/ether/sepolicy/file.te` already carries a comment warning that `type  proc_dirty_ratio`
+with two spaces defeats a naive grep, and the same trap caught this. And a vendored qcom policy on a
+QTI device has probably already solved anything QTI-generic; check there before writing it.
 
 ## Scoreboard
 

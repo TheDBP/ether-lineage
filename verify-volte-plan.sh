@@ -81,7 +81,7 @@ ck "C10 Android.mk IMS_SYMLINKS"            "$(grep -q 'IMS_SYMLINKS' "$B/Androi
 P18=$(ls "$R"/overlay/patches/device/nextbit/ether/0018-*.patch 2>/dev/null | head -1)
 DT="$SRC/device/nextbit/ether"
 RC="$DT/rootdir/init.target.rc"
-ck "S1  patch 0018 exported"                 "$([ -n "$P18" ] && echo 1 || echo 0)"
+ck "S1  patch 0018 exported (rc + mk only)"                 "$([ -n "$P18" ] && echo 1 || echo 0)"
 ck "S1b patch 0018 has no local paths"       "$([ -s "$P18" ] && ! grep -qE '/home/|/media/Storage|NBQGLMB' "$P18" 2>/dev/null && echo 1 || echo 0)"
 
 # the four daemons, from ether's own stock init -- not bullhead's two
@@ -92,15 +92,17 @@ ck "S2b init: QMI_DAEMON_STATUS starts imsdatadaemon"  "$(grep -A1 'sys.ims.QMI_
 ck "S2c init: DATA_DAEMON_STATUS starts ims_rtp_daemon" "$(grep -A1 'sys.ims.DATA_DAEMON_STATUS=1' "$RC" 2>/dev/null | grep -q 'start ims_rtp_daemon' && echo 1 || echo 0)"
 ck "S2d init: the two chained daemons are disabled"    "$([ "$(awk '/^service (imsdatadaemon|ims_rtp_daemon) /{f=1} f&&/^ *disabled/{n++; f=0} END{print n+0}' "$RC" 2>/dev/null)" = 2 ] && echo 1 || echo 0)"
 
-# sepolicy
-ck "S3  sepolicy/ims.te exists"              "$([ -f "$DT/sepolicy/ims.te" ] && echo 1 || echo 0)"
-# strip comments first: ims.te names device_domain_deprecated in a comment explaining its absence,
-# and grepping the whole file reports the explanation as the problem
-ck "S3b ims.te drops device_domain_deprecated (gone on 13)" "$([ -s "$DT/sepolicy/ims.te" ] && ! grep -vE '^[[:space:]]*#' "$DT/sepolicy/ims.te" 2>/dev/null | grep -q 'device_domain_deprecated' && echo 1 || echo 0)"
-ck "S3c ims_socket + qcom_ims_prop declared" "$(grep -q 'type ims_socket' "$DT/sepolicy/file.te" 2>/dev/null && grep -q 'type qcom_ims_prop' "$DT/sepolicy/property.te" 2>/dev/null && echo 1 || echo 0)"
-ck "S3d file_contexts labels all 4 daemons"  "$([ "$(grep -cE '/bin/(imsqmidaemon|imsdatadaemon|ims_rtp_daemon|imscmservice) ' "$DT/sepolicy/file_contexts" 2>/dev/null)" = 4 ] && echo 1 || echo 0)"
-ck "S3e file_contexts labels all 3 sockets"  "$([ "$(grep -cE '/dev/socket/ims_(qmid|datad|rtpd)' "$DT/sepolicy/file_contexts" 2>/dev/null)" = 3 ] && echo 1 || echo 0)"
-ck "S3f sys.ims. property context"           "$(grep -q 'sys.ims.' "$DT/sepolicy/property_contexts" 2>/dev/null && echo 1 || echo 0)"
+# sepolicy: device/qcom/sepolicy-legacy already carries the whole IMS policy. Declaring any of it
+# again is a hard build failure ("Duplicate declaration of type"), so these assert ABSENCE on our
+# side and PRESENCE on the legacy side.
+QS="$SRC/device/qcom/sepolicy-legacy"
+ck "S3  we ship no ims.te of our own"        "$([ ! -e "$DT/sepolicy/ims.te" ] && echo 1 || echo 0)"
+ck "S3b we do not redeclare ims_socket"      "$([ -d "$DT/sepolicy" ] && ! grep -rqE '^[[:space:]]*type[[:space:]]+ims_socket' "$DT/sepolicy" 2>/dev/null && echo 1 || echo 0)"
+ck "S3c we do not redeclare qcom_ims_prop"   "$([ -d "$DT/sepolicy" ] && ! grep -rqE '^[[:space:]]*type[[:space:]]+qcom_ims_prop' "$DT/sepolicy" 2>/dev/null && echo 1 || echo 0)"
+ck "S3d legacy policy has the ims domain"    "$(grep -qE '^[[:space:]]*type[[:space:]]+ims,' "$QS/common/ims.te" 2>/dev/null && echo 1 || echo 0)"
+ck "S3e legacy policy labels all 4 daemons"  "$([ "$(grep -rhE '/bin/(imsqmidaemon|imsdatadaemon|ims_rtp_daemon|imscmservice)[[:space:]]' "$QS"/*/file_contexts 2>/dev/null | wc -l)" -ge 4 ] && echo 1 || echo 0)"
+ck "S3f legacy policy has sys.ims. context"  "$(grep -rq 'sys.ims.' "$QS"/*/property_contexts 2>/dev/null && echo 1 || echo 0)"
+ck "S3g legacy grants set_prop(ims,...)"     "$(grep -q 'set_prop(ims, qcom_ims_prop)' "$QS/common/ims.te" 2>/dev/null && echo 1 || echo 0)"
 
 # build wiring
 ck "S4  device.mk includes ims-blobs.mk"     "$(grep -q 'vendor/extra/ims-blobs/ims-blobs.mk' "$DT/device.mk" 2>/dev/null && echo 1 || echo 0)"
@@ -109,6 +111,8 @@ ck "S4b Android.mk symlinks the JNI libs"    "$(grep -q 'IMS_SYMLINKS' "$DT/Andr
 ck "S4c no comment inside a continuation"    "$([ -s "$RC" ] && [ -s "$DT/Android.mk" ] && [ -s "$DT/device.mk" ] && { for f in "$RC" "$DT/Android.mk" "$DT/device.mk"; do awk '/\\$/{p=1;next} p&&/^[[:space:]]*#/{print "x"} {p=0}' "$f" 2>/dev/null; done | grep -q x && echo 0 || echo 1; } || echo 0)"
 
 # staged blobs
+# NOTE: apply-overlay clears vendor/extra at the start of every build, so the S5 checks only mean
+# anything after extract-ims-blobs.sh has run. Re-stage before trusting them.
 MK="$SRC/vendor/extra/ims-blobs/ims-blobs.mk"
 ck "S5  blobs staged (58 files)"             "$([ "$(find "$SRC/vendor/extra/ims-blobs" -type f ! -name '*.mk' 2>/dev/null | wc -l)" = 58 ] && echo 1 || echo 0)"
 ck "S5b ims.apk + odex staged"               "$([ -s "$SRC/vendor/extra/ims-blobs/vendor/app/ims/ims.apk" ] && [ -s "$SRC/vendor/extra/ims-blobs/vendor/app/ims/oat/arm64/ims.odex" ] && echo 1 || echo 0)"
