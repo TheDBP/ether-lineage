@@ -461,6 +461,49 @@ That is why the bridge wraps implementations rather than forwarding calls.
 Weight is concentrated: `ImsReasonInfo` (345 refs), `ImsCallProfile` (297), `IImsCallSession` (295)
 and `IImsUt` (159) are over half of all references. Get those four right first.
 
+## Step 2 done: both apps rebuilt (2026-09-23)
+
+`rebuild-app.sh <workdir> <ims|cne>`, taking the workdir `deodex-app.sh` produced. Both outputs are
+**unsigned with META-INF stripped** -- ship via `android_app_import` with `certificate: "platform"`
+and let the build sign. Do not presign: both declare a system `sharedUserId`.
+
+| | classes | dex | sharedUserId |
+|---|---|---|---|
+| `ims-rebuilt.apk` | **325** (226 app + 99 legacy) | 787,464 B | `android.uid.phone` |
+| `CNEService-rebuilt.apk` | **101** | 327,896 B | `android.uid.system` |
+
+### The rename, and the one rule that makes it safe
+
+`com.android.ims.*` -> `org.codeaurora.ims.legacy.*` across 1589 type references in the app and 6969
+in the recovered framework classes, which are merged into the app's own dex -- so the apk carries
+its legacy framework with it and needs no `uses-library`. The closure is 99 classes out of the 166
+available; all 68 types it reaches outside `com/android/ims` resolve on 13.
+
+Strings split two ways and the split is not cosmetic:
+
+- **Rename the AIDL descriptors** (373 of them). Android 13 still ships
+  `com/android/ims/internal/IImsService.aidl` with *different methods*. Leaving our 7.1 interfaces
+  advertising the identical descriptor invites a binder call across incompatible signatures.
+- **Leave the broadcast actions.** `com.android.ims.IMS_SERVICE_UP`, `IMS_SERVICE_DOWN`,
+  `com.android.ims.volte.incoming_call`, `com.android.imscontection.DISCONNECTED` (sic) are a
+  contract with whoever listens, not class names.
+
+The rule separating them: rewrite a string only when it exactly names a class being renamed.
+
+### CNE packaging, from its manifest
+
+`com.quicinc.cne.CNEService`, `sharedUserId=android.uid.system`, `persistent=true`,
+`process=".dataservices"`, and `<uses-library android:name="com.quicinc.cne"/>`. So it also needs
+both jars and both permission XMLs, which declare the libraries:
+
+    /system/etc/permissions/com.quicinc.cne.xml  -> com.quicinc.cne      -> /system/framework/com.quicinc.cne.jar
+    /system/etc/permissions/cneapiclient.xml     -> com.quicinc.cneapiclient -> /system/framework/cneapiclient.jar
+
+**99 of the rebuilt apk's 101 classes also exist in `com.quicinc.cne.jar`** -- it genuinely owns only
+`CNEServiceApp` and its handler; the rest are the cne library and protobuf-micro. That duplication is
+what stock shipped, since the odex we rebuilt from is stock's own. Do not "fix" it by trimming the
+apk to two classes: matching stock is the conservative choice and stock demonstrably worked.
+
 ## Wi-Fi calling (VoWiFi)
 
 Same IMS stack, different transport: signalling goes through the same `org.codeaurora.ims` service,
