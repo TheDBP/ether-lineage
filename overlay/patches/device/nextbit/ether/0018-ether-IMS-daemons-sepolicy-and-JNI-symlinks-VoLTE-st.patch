@@ -1,34 +1,37 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Wed, 23 Sep 2026 10:57:14 -0400
+Date: Wed, 23 Sep 2026 11:11:34 -0400
 Subject: [PATCH] ether: IMS daemons, sepolicy and JNI symlinks (VoLTE step 4)
 
-Ported from device_lge_bullhead lineage-16.0 -- same msm8992, same QTI IMS generation, and the last
-place LineageOS carried working IMS wiring for this modem.
+The daemon set comes from ether's OWN stock ramdisk, not from bullhead. Bullhead starts two;
+ether's stock init.target.rc runs a three-stage chain plus a fourth service:
 
-init.target.rc gets imsqmidaemon and imsdatadaemon with their ims_qmid/ims_datad sockets, the
-second disabled until imsqmidaemon sets sys.ims.QMI_DAEMON_STATUS. Paths are /vendor/bin, not
-bullhead's /system/bin.
+  imsqmidaemon -> sys.ims.QMI_DAEMON_STATUS=1 -> imsdatadaemon
+               -> sys.ims.DATA_DAEMON_STATUS=1 -> ims_rtp_daemon (socket ims_rtpd)
+  imscmservice: class main, no socket, always running
 
-sepolicy/ims.te is bullhead's domain minus device_domain_deprecated, which does not exist on 13 --
-so anything it silently granted has to be re-derived from real denials. Supporting types
-(ims_socket, qcom_ims_prop) and the contexts go with it, and rild gets write access to the sockets.
+imsqmidaemon and imsdatadaemon are byte-identical between the two devices, which is why porting the
+rest from bullhead was safe; the two extra stages would have been missed entirely.
 
-Android.mk symlinks libimscamera_jni.so and libimsmedia_jni.so into vendor/app/ims/lib/arm64: the
-APK looks for its JNI there rather than on the library path, and without them it installs and
-cannot place a call with no obvious error.
+sepolicy/ims.te is bullhead's domain minus device_domain_deprecated, which does not exist on 13, so
+anything it silently granted has to be re-derived from real denials. Paths are /vendor/bin.
 
-None of this has been through a boot yet -- the blobs it refers to are not staged.
+Android.mk symlinks the JNI libraries into vendor/app/ims/lib/arm64 -- the APK looks for them there
+rather than on the library path, and without them it installs and cannot place a call.
+
+device.mk -includes the staged blob fragment, so a build without extract-ims-blobs.sh is simply a
+build without IMS rather than a build that fails.
 ---
  Android.mk                 | 15 +++++++++++++++
- rootdir/init.target.rc     | 20 ++++++++++++++++++++
+ device.mk                  |  4 ++++
+ rootdir/init.target.rc     | 38 ++++++++++++++++++++++++++++++++++++++
  sepolicy/file.te           |  3 +++
- sepolicy/file_contexts     |  6 ++++++
+ sepolicy/file_contexts     |  9 +++++++++
  sepolicy/ims.te            | 32 ++++++++++++++++++++++++++++++++
  sepolicy/property.te       |  3 +++
  sepolicy/property_contexts |  3 +++
  sepolicy/rild.te           |  3 +++
- 8 files changed, 85 insertions(+)
+ 9 files changed, 110 insertions(+)
  create mode 100644 sepolicy/ims.te
 
 diff --git a/Android.mk b/Android.mk
@@ -55,11 +58,26 @@ index b5e39d7..1983362 100644
 +ALL_DEFAULT_INSTALLED_MODULES += $(IMS_SYMLINKS)
 +
  endif
+diff --git a/device.mk b/device.mk
+index 7d47f14..40c4092 100644
+--- a/device.mk
++++ b/device.mk
+@@ -335,6 +335,10 @@ endif
+ # this makefile, so the test below ran against an empty value and every WITH_OEM build silently fell
+ # through to the skin's. -include, so a build without the pack staged is still fine.
+ -include vendor/extra/oem-assets/assets-vars.mk
++
++# IMS / VoLTE blobs, staged out of the stock zip by extract-ims-blobs.sh. -include, because the
++# file only exists when that script has run: a build without it is simply a build without IMS.
++-include vendor/extra/ims-blobs/ims-blobs.mk
+ ifeq ($(WITH_OEM),true)
+ ifneq ($(OEM_DEFAULT_WALLPAPER),)
+ ether_def_wallpaper := $(OEM_DEFAULT_WALLPAPER)
 diff --git a/rootdir/init.target.rc b/rootdir/init.target.rc
-index fbad491..66fc777 100644
+index fbad491..9d89aac 100644
 --- a/rootdir/init.target.rc
 +++ b/rootdir/init.target.rc
-@@ -129,3 +129,23 @@ service energy-awareness /vendor/bin/energy-awareness
+@@ -129,3 +129,41 @@ service energy-awareness /vendor/bin/energy-awareness
      user root
      group system
      oneshot
@@ -83,6 +101,24 @@ index fbad491..66fc777 100644
 +
 +on property:sys.ims.QMI_DAEMON_STATUS=1
 +    start imsdatadaemon
++
++# ether's stock init runs a third stage bullhead never had: imsdatadaemon sets DATA_DAEMON_STATUS
++# and that starts the RTP daemon. Taken from the stock ramdisk's own init.target.rc, not ported.
++service ims_rtp_daemon /vendor/bin/ims_rtp_daemon
++    class main
++    user system
++    socket ims_rtpd stream 0660 system radio
++    group radio net_raw diag inet log
++    disabled
++
++on property:sys.ims.DATA_DAEMON_STATUS=1
++    start ims_rtp_daemon
++
++# No socket and no trigger on stock: it just runs.
++service imscmservice /vendor/bin/imscmservice
++    class main
++    user system
++    group radio net_raw diag inet log
 diff --git a/sepolicy/file.te b/sepolicy/file.te
 index 01349a0..c3da705 100644
 --- a/sepolicy/file.te
@@ -95,10 +131,10 @@ index 01349a0..c3da705 100644
 +# Socket nodes init creates for the IMS daemons
 +type ims_socket, file_type;
 diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
-index 3a3e621..fa83cda 100644
+index 3a3e621..29ba4f5 100644
 --- a/sepolicy/file_contexts
 +++ b/sepolicy/file_contexts
-@@ -37,3 +37,9 @@
+@@ -37,3 +37,12 @@
  
  # Modem subsystem holder
  /(system/vendor|vendor)/bin/ether_modem_hold                             u:object_r:modem_hold_exec:s0
@@ -106,8 +142,11 @@ index 3a3e621..fa83cda 100644
 +# IMS / VoLTE
 +/dev/socket/ims_qmid                                                    u:object_r:ims_socket:s0
 +/dev/socket/ims_datad                                                   u:object_r:ims_socket:s0
++/dev/socket/ims_rtpd                                                    u:object_r:ims_socket:s0
 +/(system/vendor|vendor)/bin/imsqmidaemon                                u:object_r:ims_exec:s0
 +/(system/vendor|vendor)/bin/imsdatadaemon                               u:object_r:ims_exec:s0
++/(system/vendor|vendor)/bin/ims_rtp_daemon                              u:object_r:ims_exec:s0
++/(system/vendor|vendor)/bin/imscmservice                                u:object_r:ims_exec:s0
 diff --git a/sepolicy/ims.te b/sepolicy/ims.te
 new file mode 100644
 index 0000000..5891733

@@ -188,7 +188,7 @@ Written, not yet built or booted.
 |---|---|
 | blob list, 58 entries | `proprietary-files-ims.txt` |
 | staging | `extract-ims-blobs.sh` → `vendor/extra/ims-blobs/` + a generated `ims-blobs.mk` |
-| init, sepolicy, JNI symlinks | device patch `0018` |
+| init (4 daemons), sepolicy, JNI symlinks, device.mk include | device patch `0018` |
 
 Staging goes to `vendor/extra` rather than `vendor/nextbit/ether` on purpose: that repo is synced
 from TheMuppets, which omits the IMS set deliberately, and blobs must never be committed anyway.
@@ -202,9 +202,22 @@ Two things the script got wrong first, both worth keeping in mind for the next l
 - the apks are odexed against the 7.1 boot image, so they are copied verbatim — never re-signed or
   re-compiled by the build.
 
-Still missing before this can boot: `ims-blobs.mk` is not yet included by `device.mk`, and the four
-daemons the stock zip ships are more than the two bullhead starts (`ims_rtp_daemon` and
-`imscmservice` have no init entry — find out whether the APK starts them before adding any).
+Both open questions are answered. `device.mk` now `-include`s the staged fragment.
+
+The daemon set came from **ether's own stock ramdisk**, unpacked from the boot.img in the stock zip,
+not from bullhead. Bullhead starts two; ether's stock `init.target.rc` runs three stages plus a
+fourth service:
+
+```
+imsqmidaemon -> sys.ims.QMI_DAEMON_STATUS=1 -> imsdatadaemon
+             -> sys.ims.DATA_DAEMON_STATUS=1 -> ims_rtp_daemon   (socket ims_rtpd)
+imscmservice: class main, no socket, always running
+```
+
+`imsqmidaemon` and `imsdatadaemon` are byte-identical between the two devices, which is why porting
+the rest from bullhead was safe — but the second property handshake and the two extra services
+would have been missed entirely by following bullhead alone. **Read the target's own stock init
+before trusting a sibling's.**
 
 ## Scoreboard
 
