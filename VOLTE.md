@@ -659,6 +659,65 @@ A plain re-run of apply-overlay is not enough on its own: it skips patches whose
 appear in `BASE_REF..HEAD`, so an edited patch with an unchanged subject is skipped. The reset is
 the part that matters.
 
+## Build 10 on hardware: the IMS stack RUNS, and rild segfaults (2026-09-23)
+
+Everything up to the IMS stack itself now works. Boots in 41 s, Enforcing, `system_server` stable:
+
+    android.hardware.telephony.ims           declared
+    org.codeaurora.ims                       installed AND RUNNING
+    org.lineageos.ims.bridge                 installed and running
+    com.quicinc.cne.CNEService               installed
+    init.svc.cnd                             running
+    ImsResolver: device MMTEL package: org.lineageos.ims.bridge
+    ImsResolver: service name: ComponentInfo{org.lineageos.ims.bridge/...ImsBridgeService}
+
+So the platform discovers and selects the bridge, and the 2016 IMS service executes. Two fixes were
+needed to get the apk that far, both now in `rebuild-app.sh` as asserted transformations:
+
+1. **Hidden-API `System.arraycopy`.** libcore's type-specific overloads (`arraycopy([BI[BII)V`) are
+   `@hide`/`@UnsupportedAppUsage`, so the 2016 call raised
+   `IllegalAccessError: Method 'void java.lang.System.arraycopy(byte[], ...)' is inaccessible`
+   inside `ImsService.onCreate`, crash-looping `com.android.phone`. Four calls in `ImsSenderRxr`.
+   Redirected to the public generic `arraycopy(Object,int,Object,int,int)`, which accepts arrays --
+   semantically identical, hidden-API enforcement left on.
+2. **Video telephony cannot dlopen.** `ImsService.onCreate` calls `ImsVideoGlobals.init()`, whose
+   static init loads the VT natives, linked against a vanished libgui symbol
+   `android::Surface::Surface(sp<IGraphicBufferProducer> const&, bool)`. The call returns void and
+   its result is unused, so it is removed. The bridge already reports no video support.
+
+### The remaining blocker: nanopb ABI split across two libraries
+
+`rild` now SIGSEGVs every ~5 s -- 27 restarts in 145 s. Not the modem (no SSR, `smdcntl0` present,
+`modem_hold` holding) and not sepolicy (the 108 `rild`/`default_prop` denials are pre-existing, just
+amplified). The stack:
+
+    #00 libril.so (encode_field+364)
+    #01 libril.so (pb_encode+76)
+    #02 libril-qc-qmi-1.so (qcril_qmi_encode_npb+64)
+    #03 libril-qc-qmi-1.so (qcril_qmi_ims_pack_msg+1936)
+    #04 qcril_qmi_ims_socket_agent::send_message
+    #06 qcril_qmi_imsa_service_status_ind_hdlr
+
+The modem raises an IMSA service-status indication, rild packs an IMS protobuf for the socket client,
+and the encoder walks off the end. `libril.so` is **built from source** and exports 11 nanopb symbols;
+`libril-qc-qmi-1.so` is the **2016 blob** that hands it the message descriptors. nanopb's
+`pb_field_t` layout is not stable across versions, so the blob's descriptors do not match the
+encoder's expectations. Same bug class as the bonito camera: a prebuilt handing a platform type to
+freshly built code.
+
+**This only appears now because it needs an IMS socket client.** With no client, rild never calls
+`send_message`, so every earlier build looked fine. The SIM appearing absent in the UI is a
+consequence, not a separate fault: rild dying repeatedly leaves the subscription with
+`simSlotIndex=-1` while `gsm.sim.state` still reads READY and the radio still shows Mint/LTE.
+
+Two ways out, neither free:
+
+- **Ship the stock 2016 `libril.so`** (`system/lib64/libril.so`, 120,224 B, present in the stock
+  zip) so its nanopb matches the blob. Risk: our `rild` links it, and a 2016 libril may not satisfy
+  what the current rild expects.
+- **Pin nanopb in our `libril.so`** to the 2016 version as a vendor variant, leaving the platform
+  copy alone. More work, no partition-wide blast radius.
+
 ## Wi-Fi calling (VoWiFi)
 
 Same IMS stack, different transport: signalling goes through the same `org.codeaurora.ims` service,

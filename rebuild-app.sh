@@ -99,6 +99,46 @@ PY
   SRC="$W/merged"
 fi
 
+# Hidden-API: libcore's type-specific System.arraycopy overloads -- arraycopy([BI[BII)V and friends
+# -- are @hide/@UnsupportedAppUsage fast paths, not public API. A 2016 apk calling one directly dies
+# on 13 with
+#     java.lang.IllegalAccessError: Method 'void java.lang.System.arraycopy(byte[], ...)'
+#     is inaccessible to class ...
+# at the first call, which for ims.apk is inside ImsService.onCreate -- so com.android.phone
+# crash-loops and IMS never comes up. The generic arraycopy(Object,int,Object,int,int) IS public and
+# accepts arrays, so redirecting to it is semantically identical and keeps hidden-API enforcement on.
+echo ">> redirecting hidden-API System.arraycopy overloads to the public one"
+n=$(grep -rlE 'Ljava/lang/System;->arraycopy\(\[[A-Z]I\[[A-Z]II\)V' "$SRC" 2>/dev/null | wc -l)
+if [ "$n" -gt 0 ]; then
+  grep -rlE 'Ljava/lang/System;->arraycopy\(\[[A-Z]I\[[A-Z]II\)V' "$SRC" 2>/dev/null | while read -r f; do
+    sed -i -E 's#Ljava/lang/System;->arraycopy\(\[[A-Z]I\[[A-Z]II\)V#Ljava/lang/System;->arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V#g' "$f"
+  done
+fi
+left=$(grep -rhoE 'Ljava/lang/System;->arraycopy\(\[[A-Z]I\[[A-Z]II\)V' "$SRC" 2>/dev/null | wc -l)
+echo "   rewrote in $n file(s); specialized calls remaining: $left"
+[ "$left" -eq 0 ] || { echo "!! specialized arraycopy survived the rewrite" >&2; exit 1; }
+
+# Video telephony cannot load on 13 and takes the whole service down with it. ImsService.onCreate
+# calls ImsVideoGlobals.init(), whose static initialiser dlopens the VT natives, and those were
+# linked against a libgui that no longer exists:
+#     UnsatisfiedLinkError: dlopen failed: cannot locate symbol
+#     "_ZN7android7SurfaceC1ERKNS_2spINS_22IGraphicBufferProducerEEEb"
+#     at com.qualcomm.ims.vt.ImsMedia.<clinit> ... at ImsService.onCreate
+# i.e. android::Surface::Surface(sp<IGraphicBufferProducer> const&, bool). Shimming that is a
+# different project; the bridge already reports no video support (getVideoCallProvider returns
+# null), so drop the call. It returns void and its result is unused, so the line goes cleanly.
+if [ "$T" = "ims" ]; then
+  echo ">> dropping the video-telephony init that cannot dlopen on 13"
+  f="$SRC/org/codeaurora/ims/ImsService.smali"
+  [ -f "$f" ] || { echo "!! ImsService.smali not found" >&2; exit 1; }
+  before=$(grep -c 'ImsVideoGlobals;->init(' "$f")
+  [ "$before" -eq 1 ] || { echo "!! expected exactly 1 ImsVideoGlobals.init call, found $before" >&2; exit 1; }
+  sed -i '/invoke-static {.*}, Lcom\/qualcomm\/ims\/vt\/ImsVideoGlobals;->init(.*)V/d' "$f"
+  after=$(grep -c 'ImsVideoGlobals;->init(' "$f")
+  [ "$after" -eq 0 ] || { echo "!! the ImsVideoGlobals.init call survived" >&2; exit 1; }
+  echo "   removed 1 call"
+fi
+
 echo ">> assembling classes.dex"
 java -jar "$SM" a "$SRC" -o "$W/classes.dex" 2>/dev/null || { echo "!! assembly failed" >&2; exit 1; }
 echo "   $(java -jar "$BK" list classes "$W/classes.dex" 2>/dev/null | wc -l) classes"
