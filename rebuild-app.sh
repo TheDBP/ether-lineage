@@ -146,6 +146,42 @@ if [ "$T" = "ims" ]; then
   after=$(grep -c 'ImsVideoGlobals;->init(' "$f")
   [ "$after" -eq 0 ] || { echo "!! the ImsVideoGlobals.init call survived" >&2; exit 1; }
   echo "   removed 1 call"
+
+  # Dropping init() is not enough on its own. openForSub does
+  #     ImsVideoGlobals.getInstance().setActiveSub(sub)
+  # and getInstance() throws RuntimeException when the singleton is null -- with the misleading text
+  # "ImsVideoGlobals: Multiple initializaiton." So every startSession came back as an uncaught remote
+  # exception and the IMS session was never usable, while the bridge logged a successful open.
+  # setActiveSub's result is unused, so the whole call goes. Video stays unsupported either way.
+  g="$SRC/org/codeaurora/ims/ImsService\$2.smali"
+  [ -f "$g" ] || { echo "!! ImsService\$2.smali not found" >&2; exit 1; }
+  gi=$(grep -c 'ImsVideoGlobals;->getInstance()' "$g")
+  sa=$(grep -c 'ImsVideoGlobals;->setActiveSub(' "$g")
+  [ "$gi" -eq 1 ] && [ "$sa" -eq 1 ] || {
+    echo "!! expected one getInstance and one setActiveSub in ImsService\$2, found $gi/$sa" >&2; exit 1; }
+  python3 - "$g" <<'PYIN'
+import io,re,sys
+p=sys.argv[1]; lines=io.open(p,encoding='utf-8').read().split('\n')
+out=[]; i=0; removed=0
+while i < len(lines):
+    l=lines[i]
+    if 'ImsVideoGlobals;->getInstance()' in l:
+        # drop the invoke and the move-result that consumes it
+        i+=1; removed+=1
+        while i < len(lines) and lines[i].strip()=='':
+            i+=1
+        if i < len(lines) and lines[i].strip().startswith('move-result-object'):
+            i+=1; removed+=1
+        continue
+    if 'ImsVideoGlobals;->setActiveSub(' in l:
+        i+=1; removed+=1
+        continue
+    out.append(l); i+=1
+io.open(p,'w',encoding='utf-8').write('\n'.join(out))
+print("   removed %d instruction(s) from openForSub" % removed)
+PYIN
+  left=$(grep -c 'ImsVideoGlobals' "$g")
+  [ "$left" -eq 0 ] || { echo "!! ImsVideoGlobals references survived in ImsService\$2" >&2; exit 1; }
 fi
 
 echo ">> assembling classes.dex"
