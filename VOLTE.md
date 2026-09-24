@@ -718,6 +718,56 @@ Two ways out, neither free:
 - **Pin nanopb in our `libril.so`** to the 2016 version as a vendor variant, leaving the platform
   copy alone. More work, no partition-wide blast radius.
 
+## IMS REGISTERS (2026-09-23)
+
+The nanopb pin was the last blocker. With it, on hardware:
+
+    ImsResolver: Binding ImsService: ...ImsBridgeService with features: [{...}]
+    ImsServiceController: onServiceConnected
+    ImsBridge: onCreateMMTelImsFeature slot=0
+    ImsResolver: ImsServiceController added on slot: 0 with feature: MMTEL
+    ImsFeatureBinderRepo: [0] addConnection, subId=1, type=MMTEL
+    FeatureConnector: [ImsPhoneCallTracker] imsFeatureCreated
+    RILJ: [0200]< IMS_REGISTRATION_STATE {1, 1}
+    RILQ: IMS registered for VOIP or VT service 1
+    sys.ims.QMI_DAEMON_STATUS = 1
+
+So the modem holds an IMS registration, rild reports it, the framework receives
+`IMS_REGISTRATION_STATE {1,1}` (registered, LTE), the bridge is bound, and every framework consumer
+-- `ImsPhoneCallTracker`, `ImsSmsDispatcher`, `ImsProvisioningController`, `ImsStateCallbackController`
+-- has attached to the MMTEL feature. rild is stable at one start.
+
+### The fix: nanopb field width, not nanopb version
+
+`libril` is where nanopb lands for the whole RIL, because `libril-qc-qmi-1.so` **imports**
+`pb_encode`/`pb_decode` from it rather than carrying its own. nanopb fixes `sizeof(pb_field_t)` at
+compile time via `PB_FIELD_8/16/32BIT`; AOSP builds libril 32-bit, the msm8992 blob expects 16-bit, so
+the descriptors it passes are strided wrong and the encoder runs off the array.
+
+Patch: `overlay/patches/hardware/ril/0001-libril-match-the-vendor-blob-s-nanopb-field-layout-16.patch`.
+
+It only reproduces once something connects to the IMS socket. Every build before ims.apk ran looked
+healthy, and the visible symptom was telephony cycling Mint -> No Service -> no SIM, because rild
+restarting every ~5 s leaves the subscription unable to hold its slot. **Telephony cycling like that
+is worth checking rild's pid before believing anything about the SIM.**
+
+### Still open
+
+- `sys.ims.DATA_DAEMON_STATUS` unset, so `ims_rtp_daemon` never starts -- that is the media path, so
+  registration is up but a call has no RTP. Next thing to chase.
+- `carrier_volte_available_bool` reads **false** from the carrier config and **true** from the device
+  overlay. Mint/T-Mobile does not recognise this device, so carrier-side provisioning is the other
+  half and is not ours to fix.
+
+### A build trap that cost a cycle
+
+`apply-overlay.sh` regenerates `vendor/extra/product.mk` from the **enabled option set**. Run it
+without the option environment and it writes that file empty -- every option's makefile fragment
+silently vanishes, while `_build_rom.sh` still sets `WITH_*` and runs each option's `require.sh`, so
+nothing complains. Build 10 shipped with stock Lineage sounds and boot animation for exactly this
+reason. Always run it as `PRESET=<p> EXTRA_OPTIONS="..." apply-overlay.sh`, and check
+`vendor/extra/product.mk` has content plus `vendor/extra/overlay/` has more than `oem-assets` in it.
+
 ## Wi-Fi calling (VoWiFi)
 
 Same IMS stack, different transport: signalling goes through the same `org.codeaurora.ims` service,
