@@ -182,7 +182,7 @@ Rules that cost a build each when missed:
 
 | item | detail |
 |---|---|
-| **Flashlight** | Diagnosed; fix pending hardware verification. Wrong chip (PMIC sysfs, not the LM3646 on CCI) and then an unpowered `cam_vio` rail. See "The flashlight is not on the PMIC" below. |
+| ~~**Flashlight**~~ | **Fixed and verified on hardware 2026-09-24.** Wrong chip (PMIC sysfs, not the LM3646 on CCI), then an unpowered `cam_vio` rail. See "The flashlight is not on the PMIC" below. |
 | **`CNEService` crashes on every WiFi/mobile transition** | A7 blob calling `INetworkPolicyManager.getNetworkQuotaInfo`, removed in 12. Self-restarts, nothing depends on it. Fix: drop the APK from `proprietary-files.txt`, keep `cnd`. |
 | **LiveDisplay monochrome** | toggle has no visible effect; colour calibration works. |
 | **Wi-Fi calling** | VoLTE works (see `VOLTE-BRINGUP.md`). VoWiFi does not: the modem carries the ePDG stack and the T-Mobile config for it, but CNE never offers IWLAN as a data technology. Diagnosed, fix pending verification -- see "Wi-Fi calling dies at CNE, not at the modem" below. |
@@ -212,7 +212,7 @@ Rules that cost a build each when missed:
   audio: 2 commits). The ether builds none of the changed components — its HWC comes from prebuilt
   blobs.
 
-## The flashlight is not on the PMIC (2026-09-24)
+## The flashlight is not on the PMIC (2026-09-24, fixed and verified)
 
 The Robin's camera flash is a **TI LM3646**, an I2C flash driver on the CCI bus, strobed by two
 PM8994 GPIOs. `arch/arm64/boot/dts/fih/nbq/msm8992-camera-sensor-mtp-nbq.dtsi`:
@@ -284,6 +284,17 @@ rails parses to `num_vreg 0` and behaves as before. Guard the parse: `msm_camera
 assigns `of_property_count_strings()` -- which returns `-EINVAL` when the property is absent -- into
 a `uint32_t`, so calling it unguarded on a node without regulators asks for a ~4G-element `kzalloc`
 and fails probe.
+
+**Verified on hardware 2026-09-24.** The torch lights from the quick-settings tile. CCI now
+completes instead of timing out:
+
+    msm_cci_init:900: hw_version = 0x10020001      <- and nothing after it
+
+against the previous `msm_cci_i2c_write: wait_for_completion_timeout` / `flush_queue wait timeout` /
+`rc = -110` / `msm_flash_led_init:224 failed`. The framework sees the whole lifecycle --
+`torch status is now AVAILABLE_ON`, `Torch for camera id 0 turned on`, then `AVAILABLE_OFF` on
+release -- and `pm8994_lvs1` returns to `enable 0 use_count 0` afterwards, so the release path drops
+the rail correctly rather than stranding it on.
 
 One more, independent of the hardware: `FlashlightControllerImpl` catches only
 `CameraAccessException`, and `setTorchMode()` raises an unchecked `IllegalArgumentException` on a
