@@ -654,7 +654,7 @@ new file mode 100644
 index 0000000..289b1c7
 --- /dev/null
 +++ b/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,242 @@
 +package org.lineageos.ims.bridge;
 +
 +import android.app.PendingIntent;
@@ -704,6 +704,32 @@ index 0000000..289b1c7
 +    LegacyMMTelFeature(int slotId) {
 +        mSlotId = slotId;
 +        setFeatureState(ImsFeature.STATE_INITIALIZING);
++        awaitLegacyService();
++    }
++
++    /**
++     * Publish STATE_READY once ims.apk has registered itself.
++     *
++     * This is the whole handshake and it is easy to get backwards: the framework will not call
++     * startSession on a feature that has not reported READY, so a feature that only becomes READY
++     * inside startSession never gets used at all -- ImsResolver binds it, onCreateMMTelImsFeature
++     * runs, and then nothing happens, with no error logged anywhere.
++     *
++     * ims.apk registers "ims" with ServiceManager from its own onCreate in com.android.phone, while
++     * the bridge is a separate process, so the two race. Wait for the service on a background thread
++     * rather than blocking the binder thread that created the feature.
++     */
++    private void awaitLegacyService() {
++        new Thread(() -> {
++            IBinder b = ServiceManager.waitForService("ims");
++            if (b == null) {
++                Log.e(TAG, "slot " + mSlotId + ": ims service never appeared; feature stays down");
++                setFeatureState(ImsFeature.STATE_NOT_AVAILABLE);
++                return;
++            }
++            Log.i(TAG, "slot " + mSlotId + ": legacy ims service present, feature READY");
++            setFeatureState(ImsFeature.STATE_READY);
++        }, "ImsBridge-await").start();
 +    }
 +
 +    private IImsService legacyOrNull() {
@@ -735,7 +761,8 @@ index 0000000..289b1c7
 +                    listener != null ? new RegistrationListenerAdapter(listener) : null;
 +            mServiceId = legacy().open(mSlotId, SERVICE_CLASS_MMTEL, incomingCallIntent, adapter);
 +            Log.i(TAG, "slot " + mSlotId + ": legacy session open, serviceId=" + mServiceId);
-+            setFeatureState(ImsFeature.STATE_READY);
++            // State is published by awaitLegacyService(); the framework only reaches this method
++            // because the feature already reported READY.
 +            return mServiceId;
 +        } catch (RemoteException e) {
 +            throw rethrow("startSession", e);
