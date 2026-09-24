@@ -36,7 +36,6 @@ kzalloc and returns -ENOMEM. Calling it unguarded would fail probe on every boar
 need any of this.
 
 Both the dvt/pvt and the evt camera dtsi carry the node, so both get the supply.
-
 ---
  .../msm8992-camera-sensor-mtp-nbq-evt.dtsi    | 10 +++
  .../nbq/msm8992-camera-sensor-mtp-nbq.dtsi    | 10 +++

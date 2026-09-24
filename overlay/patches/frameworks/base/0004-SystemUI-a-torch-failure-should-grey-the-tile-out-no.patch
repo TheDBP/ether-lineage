@@ -21,7 +21,6 @@ and prints the misleading "has no flashlight".
 Catch RuntimeException as well and report it the same way as an access error. A HAL that
 declines to light the torch is a device-support problem, and the tile already has a path for
 that: dispatchError() greys it out.
-
 ---
  .../statusbar/policy/FlashlightControllerImpl.java        | 8 ++++++++
  1 file changed, 8 insertions(+)
