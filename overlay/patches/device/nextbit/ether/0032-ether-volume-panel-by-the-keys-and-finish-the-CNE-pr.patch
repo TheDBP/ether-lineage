@@ -1,0 +1,108 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Thu, 24 Sep 2026 18:38:59 -0400
+Subject: [PATCH] ether: volume panel by the keys, and finish the CNE property
+ access
+
+Three things, all small.
+
+sepolicy: CNEService reads the same properties cnd does, and giving persist.cne.* and
+persist.vendor.cnd.* their own type in 0031 moved them out of its reach as well --
+
+    avc: denied { read } comm=".dataservices" scontext=u:r:dataservice_app:s0
+                         tcontext=u:object_r:vendor_cne_prop:s0
+
+so the framework half of CNE lost access that relabelling was never meant to take. Same rule, same
+type. The app is hosted in the .dataservices process, which is why it does not show up as "cne" in
+ps and is easy to believe dead.
+
+persist.vendor.cnd.iwlan: CNE's own IWLAN switch, read by libcne, unset by this port and by stock.
+Worth setting only now that 0031 lets CNE read that property space -- the measured effect of 0031
+was "pref data tech UNKNOWN" becoming "pref data tech LTE", so CNE is answering; IWLAN is still not
+among the candidates it prepares, and this is the switch named for it. persist.vendor.cnd.wqe is
+the other one libcne reads and is deliberately left alone, so a change in the candidate list has a
+single cause.
+
+Volume panel: put it on the left, where this device's volume keys are, and raise it to meet them.
+The rocker sits at about 31% of screen height, not the middle -- fitting a homography from a photo
+to screen coordinates puts the two keys at y 505 and y 694 of 1920, midpoint 600, against the
+panel's own centre of 961. Hence -180dp. def_volume_panel_on_left is a first-boot default only;
+Settings > System > Buttons > "Show panel on left" still wins for anyone who changes it.
+---
+ device.mk                                             | 11 +++++++++++
+ .../base/packages/SystemUI/res/values/dimens.xml      | 11 +++++++++++
+ .../LineageSettingsProvider/res/values/defaults.xml   |  7 +++++++
+ sepolicy/cnd.te                                       |  9 +++++++++
+ 4 files changed, 38 insertions(+)
+ create mode 100644 overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
+ create mode 100644 overlay/lineage-sdk/packages/LineageSettingsProvider/res/values/defaults.xml
+
+diff --git a/device.mk b/device.mk
+index b38fb03..617af76 100644
+--- a/device.mk
++++ b/device.mk
+@@ -403,6 +403,17 @@ PRODUCT_PROPERTY_OVERRIDES += ro.telephony.block_binder_thread_on_incoming_calls
+ #   persist.radio.VT_CAM_INTERFACE -- video telephony is deliberately off (config_device_vt_available).
+ PRODUCT_PROPERTY_OVERRIDES += persist.data.iwlan.enable=true
+ 
++# CNE's own IWLAN switch, read by libcne alongside persist.cne.feature. Left unset by this port and
++# by stock. It is only worth setting now that sepolicy lets CNE read that property space at all --
++# before device 0031 the daemon could not see any persist.cne.*/persist.vendor.cnd.* name, so this
++# would have been another property set and never read.
++#
++# The measured effect of 0031 was CNE going from "pref data tech UNKNOWN" to "pref data tech LTE".
++# IWLAN still does not appear among the candidates it prepares, and this is the switch named for it.
++# persist.vendor.cnd.wqe is the other one libcne reads and is deliberately not set yet: one at a
++# time, so a change in the candidate list has a single cause.
++PRODUCT_PROPERTY_OVERRIDES += persist.vendor.cnd.iwlan=true
++
+ # nanopb 0.2.8, for libril-qc-qmi-1.so alone. See nanopb-0.2.8/Android.bp for why a second copy of
+ # nanopb has to exist at all.
+ PRODUCT_PACKAGES += libnanopb_legacy
+diff --git a/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml b/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
+new file mode 100644
+index 0000000..01e386d
+--- /dev/null
++++ b/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <!-- The Robin's volume rocker is at roughly 31% of the screen's height, not the middle, so the
++         stock centred panel sits well below the keys being pressed. Measured by fitting a
++         homography from a photo of the device to screen coordinates using four on-screen landmarks:
++         the two buttons come out at y 505 and y 694 of 1920, midpoint 600. The panel's own centre
++         is 961 (it spans 607..1315), so it wants to come up 361px, which is 180dp at this density.
++         An independent check point held back from the fit landed 2.4% of screen height out, which
++         is the accuracy to expect here. -->
++    <dimen name="volume_dialog_offset_y">-180dp</dimen>
++</resources>
+diff --git a/overlay/lineage-sdk/packages/LineageSettingsProvider/res/values/defaults.xml b/overlay/lineage-sdk/packages/LineageSettingsProvider/res/values/defaults.xml
+new file mode 100644
+index 0000000..65e87f3
+--- /dev/null
++++ b/overlay/lineage-sdk/packages/LineageSettingsProvider/res/values/defaults.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <!-- The volume keys are on the Robin's left edge, so put the panel on the same side. This is a
++         first-boot default only: it seeds the settings database when it is created, and anyone who
++         changes it under Settings > System > Buttons > "Show panel on left" keeps their choice. -->
++    <bool name="def_volume_panel_on_left">true</bool>
++</resources>
+diff --git a/sepolicy/cnd.te b/sepolicy/cnd.te
+index 29bd066..2964d4b 100644
+--- a/sepolicy/cnd.te
++++ b/sepolicy/cnd.te
+@@ -10,3 +10,12 @@
+ # libcne reads to find the WLAN interface it is supposed to be evaluating.
+ get_prop(cnd, vendor_cne_prop)
+ get_prop(cnd, wifi_hal_prop)
++
++# CNEService, the framework half of the Connectivity Engine, reads the same properties. It is not a
++# separate concern from the rule above: giving persist.cne.* and persist.vendor.cnd.* their own type
++# moved them out of default_prop, which this domain could read, so relabelling alone takes the
++# access away from it:
++#   avc: denied { read } comm=".dataservices" scontext=u:r:dataservice_app:s0
++#                        tcontext=u:object_r:vendor_cne_prop:s0
++# The app is hosted in the .dataservices process, which is why `ps | grep cne` does not find it.
++get_prop(dataservice_app, vendor_cne_prop)
