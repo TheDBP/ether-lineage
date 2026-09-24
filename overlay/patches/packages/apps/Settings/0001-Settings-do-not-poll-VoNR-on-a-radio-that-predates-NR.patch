@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Gabriel Roman <gabrielroman@google.com>
+Date: Fri, 15 May 2026 04:18:43 -0700
+Subject: [PATCH] Replace DeviceAdminInfo.loadDescription() with
+ loadDescriptionSafe()
+
+The loadDescriptionSafe() truncates the description string to a safe
+1024 characters length.
+
+Bug: 492093013
+Test: manual
+Flag: EXEMPT BUGFIX
+DISABLE_TOPIC_PROTECTOR
+#b/492093013
+Cherrypick-From: https://googleplex-android-review.googlesource.com/q/commit:b546ebe716f7ad1d6c01769a2072eaff47987234
+Merged-In: I1d29452e150538bcc576ac2d856029729a2ba51d
+---
+ .../specialaccess/deviceadmin/DeviceAdminAdd.java           | 2 +-
+ .../specialaccess/deviceadmin/DeviceAdminListItem.java      | 2 +-
+ .../specialaccess/deviceadmin/DeviceAdminListItemTest.java  | 6 +++++-
+ 3 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminAdd.java b/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminAdd.java
+index 32f85b4276..87385a5912 100644
+--- a/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminAdd.java
++++ b/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminAdd.java
+@@ -646,7 +646,7 @@ public class DeviceAdminAdd extends CollapsingToolbarBaseActivity {
+         mAdminName.setText(mDeviceAdmin.loadLabel(getPackageManager()));
+         try {
+             mAdminDescription.setText(
+-                    mDeviceAdmin.loadDescription(getPackageManager()));
++                    mDeviceAdmin.loadDescriptionSafe(getPackageManager()));
+             mAdminDescription.setVisibility(View.VISIBLE);
+         } catch (Resources.NotFoundException e) {
+             mAdminDescription.setVisibility(View.GONE);
+diff --git a/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItem.java b/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItem.java
+index 370a4dfe12..1ae187198b 100644
+--- a/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItem.java
++++ b/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItem.java
+@@ -46,7 +46,7 @@ class DeviceAdminListItem implements Comparable<DeviceAdminListItem> {
+         final PackageManager pm = context.getPackageManager();
+         mName = mInfo.loadLabel(pm);
+         try {
+-            mDescription = mInfo.loadDescription(pm);
++            mDescription = mInfo.loadDescriptionSafe(pm);
+         } catch (Resources.NotFoundException exception) {
+             Log.w(TAG, "Setting description to null because can't find resource: " + mKey);
+         }
+diff --git a/tests/robotests/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItemTest.java b/tests/robotests/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItemTest.java
+index 7392fb1376..d51a9b649b 100644
+--- a/tests/robotests/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItemTest.java
++++ b/tests/robotests/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItemTest.java
+@@ -19,6 +19,8 @@ package com.android.settings.applications.specialaccess.deviceadmin;
+ import static com.google.common.truth.Truth.assertThat;
+ 
+ import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.Mockito.never;
++import static org.mockito.Mockito.verify;
+ import static org.mockito.Mockito.when;
+ 
+ import android.app.admin.DeviceAdminInfo;
+@@ -60,7 +62,9 @@ public class DeviceAdminListItemTest {
+         when(mDeviceAdminInfo.getActivityInfo()).thenReturn(new ActivityInfo());
+         mDeviceAdminInfo.getActivityInfo().applicationInfo = new ApplicationInfo();
+         when(mDeviceAdminInfo.loadLabel(any(PackageManager.class))).thenReturn(label);
+-        when(mDeviceAdminInfo.loadDescription(any(PackageManager.class))).thenReturn(description);
++        verify(mDeviceAdminInfo, never()).loadDescription(any(PackageManager.class));
++        when(mDeviceAdminInfo.loadDescriptionSafe(any(PackageManager.class)))
++                .thenReturn(description);
+         when(mDeviceAdminInfo.loadIcon(any(PackageManager.class)))
+                 .thenReturn(new ColorDrawable(Color.BLUE));
+         when(mDeviceAdminInfo.getComponent()).thenReturn(cn);
