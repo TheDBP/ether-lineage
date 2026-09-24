@@ -1,0 +1,81 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Thu, 24 Sep 2026 09:41:53 -0400
+Subject: [PATCH] ether: VoLTE resources under the SIM's MNC, not the network's
+
+Mint runs on T-Mobile but issues its own SIMs. Android selects resource mcc/mnc qualifiers from
+the SIM, not from the serving network, and on this handset gsm.sim.operator.numeric reads 310240
+while gsm.operator.numeric reads 310260. The values-mcc310-mnc260 overlay therefore never applied
+and config_device_volte_available fell back to the AOSP default of false.
+
+That one resource killed the entire IMS stack. ImsManager.isVolteEnabledByPlatform() ANDs it with
+carrier_volte_available_bool, so CAPABILITY_TYPE_VOICE never entered the CapabilityChangeRequest.
+MmTelFeatureCompatAdapter consequently asked the 7.1 vendor stack to enable
+FEATURE_TYPE_UT_OVER_LTE and nothing else, the modem never attempted registration, and
+UNSOL_RESPONSE_IMS_NETWORK_STATE_CHANGED carried Registration.state = 2 (NOT_REGISTERED) with
+errorCode 0 for the whole session. ImsRegistrationCompatAdapter had nothing to report but
+registrationDisconnected, so ImsPhone was never selected and dialling fell through to
+GsmCdmaCallTracker and failed with INVALID_MODEM_STATE.
+
+Carrier config was not at fault: mConfigFromDefaultApp supplies carrier_volte_available_bool=true
+for this SIM. Only the device leg was false.
+
+Proven on hardware before writing the file, with persist.dbg.volte_avail_ovr=1 standing in for the
+resource, since that override is read ahead of both legs: the framework then enabled cap 0 on
+radioTech 13, the modem walked Registration.state 2 -> 3 -> 1 (REGISTERED, radioTech 14), SST
+logged setImsRegistrationState registered=true, ImsPhoneCallTracker logged isVolteEnabled=true and
+imsdatadaemon started. The property is not shipped; it forces VoLTE on for every carrier, whereas
+the overlay is scoped to the SIM that needs it.
+
+The CarrierConfig overlay in overlay/packages/apps/CarrierConfig carries the same mnc=260
+assumption. It is left alone deliberately: its keys are already satisfied by the carrier's own
+bundle here, and changing them would add an unattributable variable to a state now known good.
+---
+ .../res/res/values-mcc310-mnc240/config.xml   | 24 +++++++++++++++++++
+ .../res/res/values-mcc310-mnc260/config.xml   |  4 +++-
+ 2 files changed, 27 insertions(+), 1 deletion(-)
+ create mode 100644 overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
+
+diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
+new file mode 100644
+index 0000000..9658dd3
+--- /dev/null
++++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
+@@ -0,0 +1,24 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Mint Mobile (MCC 310 / MNC 240) VoLTE / VT / Wi-Fi-Calling.
++
++     Mint runs on T-Mobile's network but issues its own SIMs, and Android picks resource
++     mcc/mnc qualifiers from the SIM, not from the serving network. On this device
++     gsm.sim.operator.numeric reads 310240 while gsm.operator.numeric reads 310260, so the
++     values-mcc310-mnc260 overlay never applied and config_device_volte_available fell back to
++     the AOSP default of false. ImsManager.isVolteEnabledByPlatform() ANDs that resource with
++     carrier_volte_available_bool, so VOICE never entered the CapabilityChangeRequest, the
++     vendor stack was only ever told to enable UT over LTE, and the modem never registered.
++
++     Carrier config was not the problem: mConfigFromDefaultApp supplies
++     carrier_volte_available_bool=true for this SIM. Only the device leg was false.
++
++     Keep this file in step with values-mcc310-mnc260/config.xml. -->
++<resources>
++    <bool name="config_device_volte_available">true</bool>
++    <bool name="config_device_vt_available">true</bool>
++    <bool name="config_device_wfc_ims_available">true</bool>
++    <!-- legacy leg some code paths still consult -->
++    <bool name="config_carrier_volte_available">true</bool>
++    <!-- displayed RAT during a VoLTE call; 3 = UMTS, T-Mobile's value -->
++    <integer name="config_volte_replacement_rat">3</integer>
++</resources>
+diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+index cbb6857..7cbbfb1 100644
+--- a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
++++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+@@ -1,5 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<!-- T-Mobile US (MCC 310 / MNC 260, includes Mint Mobile) VoLTE / VT / Wi-Fi-Calling.
++<!-- T-Mobile US (MCC 310 / MNC 260) VoLTE / VT / Wi-Fi-Calling. NOT Mint: Mint SIMs
++     report 310240 and are handled by the values-mcc310-mnc240 sibling, because Android
++     takes these qualifiers from the SIM and not from the serving network.
+      Android applies this values-mcc310-mnc260 overlay ONLY when a 310/260 SIM is present,
+      so it is inherently scoped to T-Mobile's network — no other carrier is touched.
+ 

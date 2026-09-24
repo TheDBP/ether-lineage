@@ -744,7 +744,9 @@ So the modem holds an IMS registration, rild reports it, the framework receives
 compile time via `PB_FIELD_8/16/32BIT`; AOSP builds libril 32-bit, the msm8992 blob expects 16-bit, so
 the descriptors it passes are strided wrong and the encoder runs off the array.
 
-Patch: `overlay/patches/hardware/ril/0001-libril-match-the-vendor-blob-s-nanopb-field-layout-16.patch`.
+Patch: `overlay/patches/hardware/ril/0001-libril-stop-exporting-nanopb-so-the-QTI-blob-can-bind.patch`.
+(The earlier field-width patch this section described was wrong and no longer exists; the real
+cause was the 0.2.8 vs 0.3.x LTYPE shift, see below.)
 
 It only reproduces once something connects to the IMS socket. Every build before ims.apk ran looked
 healthy, and the visible symptom was telephony cycling Mint -> No Service -> no SIM, because rild
@@ -787,6 +789,10 @@ definition. The block that applies is `mConfigFromDefaultApp`, and for this SIM
     carrier_ims_gba_required_bool    true
 
 So VoLTE is enabled carrier-side. Read `mConfigFromDefaultApp`, never the defaults block.
+
+That note stands, and it was only ever half the answer. `isVolteEnabledByPlatform()` ANDs the
+carrier key with the **device** resource `config_device_volte_available`, and that was the false
+leg. See "The root cause: the SIM's MNC, not the network's" below.
 
 Worth remembering for later: `carrier_ims_gba_required_bool=true` means T-Mobile expects GBA for IMS
 authentication. Registration already succeeds, so it is not blocking now.
@@ -1016,3 +1022,97 @@ the service element to exist first. **Negative-test this script before trusting 
 - Test with the SIM in; `logcat -b radio` and `dumpsys telephony.registry` after every flash.
 - A root build is not needed; `adb root` on userdebug is enough.
 - Stock blobs stay in `vendor/nextbit/ether`; never in a public repo.
+
+## The root cause: the SIM's MNC, not the network's (2026-09-24)
+
+`config_device_volte_available` was shipped only in
+`overlay/frameworks/base/core/res/res/values-mcc310-mnc260/`, on the assumption that Mint is
+T-Mobile. Android picks resource mcc/mnc qualifiers from the **SIM**, not the serving network:
+
+    gsm.sim.operator.numeric  310240   <- Mint, chooses the resource qualifier
+    gsm.operator.numeric      310260   <- T-Mobile, does not
+
+So the overlay never applied and the resource fell back to AOSP's `false`. The whole failure chain
+hung off that one boolean:
+
+    config_device_volte_available = false
+      -> isVolteEnabledByPlatform() = false          (ANDed with carrier_volte_available_bool=true)
+        -> CAPABILITY_TYPE_VOICE never in the CapabilityChangeRequest
+          -> MmTelFeatureCompatAdapter enables FEATURE_TYPE_UT_OVER_LTE (cap 4) and nothing else
+            -> modem never attempts registration
+              -> Registration.state = 2 NOT_REGISTERED, errorCode 0, for the entire session
+                -> only registrationDisconnected ever reaches the framework
+                  -> ImsPhone not selected -> CS fallback -> DIAL error 46 INVALID_MODEM_STATE
+
+Fixed by patch 0026: `values-mcc310-mnc240/config.xml`. Keep it in step with the `-mnc260` sibling.
+
+**This was a regression, not a gap that was always there.** Patch 0004 replaced a global
+`persist.dbg.volte_avail_ovr=1` with the `-mnc260` overlay; its own comment records the swap. The
+override worked because it is carrier-agnostic, the overlay did not because it is scoped to an MNC
+this SIM does not report. The 2026-09-23 "IMS REGISTERS" note above was taken before that swap.
+
+Corroborated in the logs: `qcril_qmi_imsa_is_ims_registered_for_voip_vt_service` printed
+`IMS registered for VOIP or VT service 1` on 2026-09-23 and `... 0` on 2026-09-24 before the fix.
+
+### What this clears up
+
+- **The registration-listener gap was never a bug in our code.** The bridge, the ten forwarded
+  `IImsRegistrationListener` methods, the generated AIDL and nanopb 0.2.8 were all working. They
+  were faithfully relaying "not registered".
+- **`DATA_DAEMON_STATUS` / `imsdatadaemon` was a symptom, not a second bug.** `imsdatadaemon`
+  starts on its own once registration proceeds.
+- **The CNEService crash is unrelated.** It does not even start on a boot where IMS registers.
+- **Do not read registration off `RILJ: IMS_REGISTRATION_STATE {1,1}` alone.** That is the legacy
+  RIL query. The signal the call path follows is the `ImsQmiIF.Registration` unsol (id 204) reaching
+  `ImsRegistrationCompatAdapter`. They disagreed for a whole session: RILQ said registered while the
+  MMTel side logged `registrationDisconnected` four times.
+
+### Measured after the fix
+
+    changeEnabledCapabilities - cap: 0 radioTech: 13 enabled   (FEATURE_TYPE_VOICE_OVER_LTE)
+    setFeatureValueReceived with value 1
+    Registration payload  08 03 -> 08 03 -> 08 01   (REGISTERING -> REGISTERED), radioTech 14
+    SST: setImsRegistrationState {registered=true mImsRegistrationOnOff=true}
+    ImsPhoneCallTracker: isVolteEnabled=true
+    MmTel Capabilities - [Voice: true ...]   and it STAYS true
+    init.svc.imsdatadaemon: running
+
+### Reading the IMS wire protocol
+
+`ImsSenderRxr` logs every frame: `Response data: [...]` is raw bytes, the next line is the decoded
+envelope. Frame = one length byte, then a `MsgTag` (field 1 fixed32 token, 2 varint type, 3 varint
+message id, 4 varint error), then the payload message. The length byte covers the tag only. For
+`Registration` (id 204): field 1 `state` varint (1 REGISTERED, 2 NOT_REGISTERED, 3 REGISTERING),
+field 2 `errorCode` **fixed32**, field 3 `errorMessage`, field 4 `radioTech`. Decoding a frame by
+hand is the fastest way to tell a transport bug from an honest answer from the modem.
+
+### Still to do
+
+- `persist.dbg.volte_avail_ovr=1` is set on the test Robin, left there so a call can be tried
+  before the next build. **Clear it before validating patch 0026** or the overlay is untested.
+  It is deliberately not shipped: it forces VoLTE on for every carrier.
+- `overlay/packages/apps/CarrierConfig/res/xml/vendor.xml` carries the same `mnc="260"`
+  assumption. Inert here, because the carrier's own bundle already supplies those keys. Left alone
+  so patch 0026 stays one attributable change.
+
+## The call path opens, and hits the rename's sharpest edge (2026-09-24)
+
+With registration up, dialling now goes down `ImsPhoneCallTracker.dialInternal` instead of
+`GsmCdmaCallTracker` -- the IMS path. It fails immediately at `createCallSession()`:
+
+    Class not found when unmarshalling: org.codeaurora.ims.legacy.ImsStreamMediaProfile
+      at org.codeaurora.ims.legacy.ImsCallProfile.readFromParcel(ImsCallProfile.java:328)
+      at org.codeaurora.ims.legacy.internal.IImsService$Stub.onTransact
+
+`readParcelable(null)` is the culprit, and it is ours. A null loader makes `Parcel` fall back to
+its own -- the BOOT classloader. On 7.1 that worked because these were `com.android.ims.*`,
+framework classes on the boot classpath. The rename moved them into the app, where the boot loader
+cannot see them, so the first inbound `ImsCallProfile` throws and every call fails.
+
+Fixed in `rebuild-app.sh`: each `readParcelable` site is repointed at the class's own loader
+(`const-class` + `getClassLoader`), asserted at exactly 4 call sites across `ImsCallProfile` (x2),
+`ImsConferenceState` and `ImsExternalCallState`. Verified by assembling each rewritten class.
+
+**Rule for the rename: a class that moves off the boot classpath breaks every `readParcelable(null)`,
+`readBundle()` and `readSerializable()` that used to resolve it.** Grep for those before blaming the
+transport.

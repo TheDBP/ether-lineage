@@ -184,6 +184,53 @@ PYIN
   [ "$left" -eq 0 ] || { echo "!! ImsVideoGlobals references survived in ImsService\$2" >&2; exit 1; }
 fi
 
+# Parcel.readParcelable(null) -- the rename's sharpest edge.
+#
+# On 7.1 these classes were com.android.ims.*, which lived on the BOOT classpath, so
+# readParcelable(null) resolved them: a null loader makes Parcel fall back to its own
+# (framework) loader. We renamed them into the app, and an app class is invisible to the boot
+# loader, so the first inbound ImsCallProfile dies with
+#     ClassNotFoundException: org.codeaurora.ims.legacy.ImsStreamMediaProfile
+#         at ...ImsCallProfile.readFromParcel
+# inside IImsService$Stub.onTransact, and every createCallSession fails.
+#
+# Rewrite each call site to pass the class's own loader. Inserted immediately before the invoke
+# so the register is correct at the point of use regardless of what the prologue put there.
+echo ">> repointing Parcel.readParcelable(null) at the app class loader"
+python3 - "$SRC" <<'PYIN'
+import io, os, re, sys
+src = sys.argv[1]
+INV = re.compile(r'^(\s*)invoke-virtual \{([pv]\d+), ([pv]\d+)\}, Landroid/os/Parcel;->readParcelable\(Ljava/lang/ClassLoader;\)')
+total = 0
+for root, _, files in os.walk(src):
+    for fn in files:
+        if not fn.endswith('.smali'):
+            continue
+        path = os.path.join(root, fn)
+        text = io.open(path, encoding='utf-8').read()
+        if 'Landroid/os/Parcel;->readParcelable(' not in text:
+            continue
+        lines = text.split('\n')
+        cls = next((l.split()[-1] for l in lines if l.startswith('.class ')), None)
+        if not cls:
+            print('!! no .class in %s' % path); sys.exit(1)
+        out = []
+        for l in lines:
+            m = INV.match(l)
+            if m:
+                ind, reg = m.group(1), m.group(3)
+                out.append('%sconst-class %s, %s' % (ind, reg, cls))
+                out.append('%sinvoke-virtual {%s}, Ljava/lang/Class;->getClassLoader()Ljava/lang/ClassLoader;' % (ind, reg))
+                out.append('%smove-result-object %s' % (ind, reg))
+                total += 1
+            out.append(l)
+        io.open(path, 'w', encoding='utf-8').write('\n'.join(out))
+print('   repointed %d readParcelable call site(s)' % total)
+if total != 4:
+    print('!! expected 4 readParcelable call sites, found %d' % total); sys.exit(1)
+PYIN
+[ $? -eq 0 ] || exit 1
+
 echo ">> assembling classes.dex"
 java -jar "$SM" a "$SRC" -o "$W/classes.dex" 2>/dev/null || { echo "!! assembly failed" >&2; exit 1; }
 echo "   $(java -jar "$BK" list classes "$W/classes.dex" 2>/dev/null | wc -l) classes"
