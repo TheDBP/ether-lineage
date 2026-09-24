@@ -182,6 +182,95 @@ print("   removed %d instruction(s) from openForSub" % removed)
 PYIN
   left=$(grep -c 'ImsVideoGlobals' "$g")
   [ "$left" -eq 0 ] || { echo "!! ImsVideoGlobals references survived in ImsService\$2" >&2; exit 1; }
+
+  # Third consequence of dropping init(): ImsCallSessionImpl.maybeCreateVideoProvider constructs an
+  # ImsVideoCallProviderImpl, whose constructor calls CameraController.getInstance(), which throws
+  #     java.lang.RuntimeException: CameraController: Not initialized
+  # because init() is exactly what would have initialised it. The throw crosses binder as an uncaught
+  # remote exception, so createCallSession returns null and every outgoing call fails. Worse, Telecom
+  # has already built a connection by then, so the call wedges in DISCONNECTING and the device needs
+  # a reboot before it can dial again.
+  #
+  # The guard is isConfigEnabled(0x7f030005), a bool in ims.apk's OWN resources, so the framework's
+  # config_device_vt_available cannot switch it off. Force the parameter false at method entry and
+  # the existing `if-eqz p1` early-return does the rest. Video stays unsupported either way.
+  echo ">> forcing maybeCreateVideoProvider to no-op (CameraController is never initialised)"
+  h="$SRC/org/codeaurora/ims/ImsCallSessionImpl.smali"
+  [ -f "$h" ] || { echo "!! ImsCallSessionImpl.smali not found" >&2; exit 1; }
+  python3 - "$h" <<'PYIN'
+import io, sys
+p = sys.argv[1]
+lines = io.open(p, encoding='utf-8').read().split('\n')
+out, i, done = [], 0, 0
+SKIP = ('.registers', '.param', '.prologue', '.line', '.local')
+while i < len(lines):
+    out.append(lines[i])
+    if lines[i].strip() == '.method private maybeCreateVideoProvider(Z)V':
+        j = i + 1
+        while j < len(lines) and (lines[j].strip() == '' or lines[j].strip().startswith(SKIP)):
+            out.append(lines[j]); j += 1
+        got = lines[j].strip() if j < len(lines) else '<eof>'
+        if not got.startswith('if-eqz p1,'):
+            print('!! expected "if-eqz p1," first, got: %r' % got); sys.exit(1)
+        out.append('    const/4 p1, 0x0')
+        done += 1
+        i = j
+        continue
+    i += 1
+if done != 1:
+    print('!! expected exactly 1 maybeCreateVideoProvider, patched %d' % done); sys.exit(1)
+io.open(p, 'w', encoding='utf-8').write('\n'.join(out))
+print('   neutralised %d site(s)' % done)
+PYIN
+  [ $? -eq 0 ] || exit 1
+
+  # Fourth site, same root: ImsCallSessionImpl.maybeUpdateLowBatteryStatus calls
+  # LowBatteryHandler.getInstance(), which ImsVideoGlobals.init() would have initialised, so it
+  # throws "LowBatteryHandler: Not initialized". It is reached from updateImsCallProfile via the
+  # ImsCallSessionImpl constructor on ImsServiceClassTracker.handleCalls -- whenever the modem
+  # reports a call -- and it is a FATAL EXCEPTION on com.android.phone's main thread. Telephony dies
+  # mid-call-setup and the dialer is left holding a stuck tone.
+  #
+  # The method returns Z and callers read false as "nothing to report", which is what we want: no VT,
+  # no low-battery video downgrade. Force the early return.
+  #
+  # NOTE: this is the FOURTH place dropping init() has surfaced. If a fifth appears, stop patching
+  # call sites and do the Surface shim instead so init() can run -- see VOLTE.md, "VT ABI".
+  echo ">> forcing maybeUpdateLowBatteryStatus to no-op (LowBatteryHandler is never initialised)"
+  python3 - "$h" <<'PYIN'
+import io, sys
+p = sys.argv[1]
+lines = io.open(p, encoding='utf-8').read().split('\n')
+out, i, done = [], 0, 0
+SKIP = ('.registers', '.param', '.prologue', '.line', '.local')
+while i < len(lines):
+    out.append(lines[i])
+    if lines[i].strip() == '.method private maybeUpdateLowBatteryStatus()Z':
+        j = i + 1
+        while j < len(lines) and (lines[j].strip() == '' or lines[j].strip().startswith(SKIP)):
+            out.append(lines[j]); j += 1
+        # Force the existing guard rather than inserting a return: the method opens with
+        #     iget-boolean vN, p0, ...->mStateChangeReportingAllowed:Z
+        #     if-nez vN, :cond_...
+        # so zeroing that register takes the already-present "ignore, return false" path. Inserting
+        # a bare `return` instead would leave the rest of the method unreachable.
+        if j >= len(lines) or 'mStateChangeReportingAllowed' not in lines[j]:
+            print('!! expected the mStateChangeReportingAllowed read first, got: %r'
+                  % (lines[j].strip() if j < len(lines) else '<eof>')); sys.exit(1)
+        reg = lines[j].split(',')[0].split()[-1]
+        out.append(lines[j]); j += 1
+        out.append('    const/4 %s, 0x0' % reg)
+        done += 1
+        i = j
+        continue
+    i += 1
+if done != 1:
+    print('!! expected exactly 1 maybeUpdateLowBatteryStatus, patched %d' % done); sys.exit(1)
+io.open(p, 'w', encoding='utf-8').write('\n'.join(out))
+print('   neutralised %d site(s)' % done)
+PYIN
+  [ $? -eq 0 ] || exit 1
+
 fi
 
 # Parcel.readParcelable(null) -- the rename's sharpest edge.
