@@ -182,10 +182,10 @@ Rules that cost a build each when missed:
 
 | item | detail |
 |---|---|
-| **Flashlight** | torch toggle has no effect; not diagnosed. |
+| **Flashlight** | Diagnosed; fix pending hardware verification. Wrong chip (PMIC sysfs, not the LM3646 on CCI) and then an unpowered `cam_vio` rail. See "The flashlight is not on the PMIC" below. |
 | **`CNEService` crashes on every WiFi/mobile transition** | A7 blob calling `INetworkPolicyManager.getNetworkQuotaInfo`, removed in 12. Self-restarts, nothing depends on it. Fix: drop the APK from `proprietary-files.txt`, keep `cnd`. |
 | **LiveDisplay monochrome** | toggle has no visible effect; colour calibration works. |
-| **No VoLTE / Wi-Fi calling** | LTE data and SMS work; voice falls back to 2G/3G, so on T-Mobile/Mint (no legacy network) calls fail. The stock N108 zip ships the QTI IMS stack (`org.codeaurora.ims`, `imsqmidaemon`, `lib-ims*`), but it is a pre-P `ServiceManager("ims")` service that Android 9+ cannot bind. Plan and inventory in `VOLTE.md` on branch `lineage-20.0-volte`. |
+| **Wi-Fi calling** | VoLTE works (see `VOLTE-BRINGUP.md`). VoWiFi does not: the modem carries the ePDG stack and the T-Mobile config for it, but CNE never offers IWLAN as a data technology. Diagnosed, fix pending verification -- see "Wi-Fi calling dies at CNE, not at the modem" below. |
 | **QMI blobs are not modules** | `libqmi_cci`, `libqmi_common_so`, `libmdmdetect` exist in `vendor/nextbit/ether/proprietary/` but are declared `PRODUCT_COPY_FILES`, so `LOCAL_SHARED_LIBRARIES` cannot resolve them. Worked around with `TARGET_PROVIDES_WCNSS_QMI := true`, which selects the OSS dlopen path 19.1 actually compiled. |
 
 ---
@@ -246,11 +246,124 @@ the wrong hardware too. `strobe` is separately wrong: `qpnp_led_strobe_type_stor
 vs software strobe (`'0' for sw strobe; '1' for hw strobe`), it is not an output gate, and
 `FLASH_LED_STROBE_TYPE_HW` (0x40) collides with `FLASH_LED1_TRIGGER` (0x40).
 
-**The fix is the camera subdev.** `/dev/v4l-subdev9` is `msm_flash`, and
-`include/media/msm_camsensor_sdk.h` gives the interface:
+**The fix is the camera subdev, and then a regulator.** Two parts, found in that order.
 
-    enum msm_flash_cfg_type_t { CFG_FLASH_INIT, CFG_FLASH_RELEASE, CFG_FLASH_OFF,
-                                CFG_FLASH_LOW, CFG_FLASH_HIGH };
+The subdev first. This kernel carries two flash frameworks and they are not interchangeable:
+`msm_led_flash.c` takes `VIDIOC_MSM_FLASH_LED_DATA_CFG` with a flat `msm_camera_led_cfg_t`
+(`MSM_CAMERA_LED_{OFF,LOW,HIGH,INIT,RELEASE}`, `MSM_CAMERA_LED_LOW` is torch), while `msm_flash.c`
+takes `VIDIOC_MSM_FLASH_CFG` with a struct full of userspace pointers. The LM3646 uses the former.
+Do not go by the index -- `/dev/v4l-subdev9` is not stable -- and do not go by `entity.name` from
+`MEDIA_IOC_ENUM_ENTITIES` either: `msm_sd_register()` overwrites it with the device node's own name
+(`msm.c:320`, `sd->entity.name = video_device_node_name(vdev)`), so matching "msm_flash" there finds
+nothing. The subdev name survives only in `/sys/class/video4linux/<node>/name`, which the camera
+domain cannot read. Both frameworks also register under `MSM_CAMERA_SUBDEV_FLASH`. So: enumerate for
+that group_id and settle which framework probed by which ioctl the subdev accepts.
 
-`CFG_FLASH_LOW` is torch. Rework `QCameraFlash` to INIT / LOW / OFF / RELEASE against that subdev
-instead of writing sysfs. The camera HAL already has the access, which is why the camera app works.
+That gets the ioctl to the driver, and then it fails:
+
+    msm_cci_i2c_write: wait_for_completion_timeout 681
+    msm_cci_flush_queue:113 wait timeout
+    msm_camera_cci_i2c_write_table: line 217 rc = -110
+    msm_flash_led_init:224 failed
+
+CCI is fine -- no `cci_init failed`, so the GDSC, the clocks and the CCI reset all came up. The chip
+is simply not powered: `pm8994_lvs1`, which is `cam_vio`, reads `enable 0 use_count 0` in
+`/sys/kernel/debug/regulator/` whenever no camera is open. **`led_flash0` declares no regulators at
+all**; every rail belongs to the sensor node that owns the flash via `qcom,led-flash-src`. And
+`msm_led_i2c_trigger.c` has no regulator handling whatsoever -- it assumes the chip is already
+powered, which for a flash driven from the camera pipeline it always was. Which is exactly why stock
+had no torch API.
+
+An unpowered i2c slave does not NACK. The transfer never completes and surfaces as a queue timeout,
+which reads like a bus fault and is a power one.
+
+Kernel patch 0006 gives the flash node its own `cam_vio-supply` and teaches the driver to bring it
+up in `msm_flash_led_init()` and drop it in `msm_flash_led_release()`. The regulator core refcounts,
+so naming the sensor's supply costs nothing while a session holds it, and a flash node declaring no
+rails parses to `num_vreg 0` and behaves as before. Guard the parse: `msm_camera_get_dt_vreg_data()`
+assigns `of_property_count_strings()` -- which returns `-EINVAL` when the property is absent -- into
+a `uint32_t`, so calling it unguarded on a node without regulators asks for a ~4G-element `kzalloc`
+and fails probe.
+
+One more, independent of the hardware: `FlashlightControllerImpl` catches only
+`CameraAccessException`, and `setTorchMode()` raises an unchecked `IllegalArgumentException` on a
+background executor. Any HAL refusal therefore killed SystemUI. It never surfaced before because the
+old sysfs writes always "succeeded" against nodes wired to nothing. frameworks/base 0004 catches it
+and greys the tile out instead.
+
+## Wi-Fi calling dies at CNE, not at the modem (2026-09-24)
+
+**The modem is not the blocker, and that is worth knowing before spending any more time on it.**
+The Robin's own shipped modem firmware carries the full IWLAN/ePDG stack -- `strings` over
+`/firmware/image/modem.b*` gives 70 hits on `epdg` plus:
+
+    IWLAN S2B IFACE 1 ... IWLAN S2B IFACE 16
+    IWLAN 3GPP PDP 0/1/2, IWLAN 3GPP2
+    IMSSupplementaryService.cpp:HandleRATTechnologyChange: IWLAN/WLAN/LTE RAT found
+    /nv/item_files/data/wlan_config/iwlan_s2b_mtu_val
+
+S2b is the 3GPP interface for untrusted WLAN to an ePDG. That is modem code, not carrier config.
+The carrier config is there too, in the same image:
+
+    /firmware/image/mdm/modem_pr/mcfg/configs/mcfg_sw/generic/na/tmo/commerci/mcfg_sw.mbn
+      epdg_fqdn:ss.epdg.epc.mnc260.mcc310.pub.3gppnetwork.org;
+      Supported_RAT_Priority_List:WWAN,IWLAN;
+
+Wi-Fi calling was never a shipped feature on this device, but the capability was compiled in and
+left switched off. Note the path: the mcfg tree is under `/firmware/image/**mdm**/modem_pr/`, not
+`/firmware/image/modem_pr/` as stock's `persist.radio.app_hw_mbn_path` claims. That property has no
+consumer anywhere in the image and its stock value points at a directory that does not exist; do not
+copy it from stock's `build.prop`.
+
+**The framework side is healthy.** `ImsManager` reports
+`available=true, enabled=true, mode=1, provisioned=true, isFeatureOn=true`, and the RIL stores what
+it is given (`Set config CLIENT PROVISIONING wifi_call_preference to: 3`).
+
+**The decision point is in the RIL, and it is where the path ends:**
+
+    qcril_qmi_nas_update_data_rte: .. pref data tech UNKNOWN, is current 0
+    qcril_qmi_nas_update_data_rte: preferred data tech available UNKNOWN
+    qcril_qmi_nas_update_data_rte:  .. prep CDMA / prep EVDO / prep GSM / prep LTE
+
+The RIL asks CNE which data technology to prefer; CNE answers UNKNOWN, and IWLAN never appears among
+the candidates it prepares. Nothing downstream can attempt an ePDG tunnel over a transport that was
+never offered.
+
+**CNE answers UNKNOWN because it cannot read a single one of its own properties:**
+
+    avc: denied { read } comm="cnd" tcontext=u:object_r:default_prop:s0
+    avc: denied { read } comm="cnd" tcontext=u:object_r:wifi_hal_prop:s0
+
+Taken from the binaries rather than guessed, `cnd` and `libcne` read exactly:
+
+    persist.cne.feature, persist.cne.override.memlimit
+    persist.cne.{bat.*, bwbased.rat.sel, fmc.*, loc.policy.*, logging.qxdm,
+                 nsrm.bkg.evt, rat.acq.*, rat.wlan.chip.oem, snsr.based.rat.mgt}
+    persist.vendor.cnd.iwlan, persist.vendor.cnd.wqe
+    ro.board.platform, wifi.interface
+
+Every `persist.cne.*` and `persist.vendor.cnd.*` name falls through to `default_prop`, which `cnd` is
+not allowed to read, and `wifi.interface` is `wifi_hal_prop`, also denied. So `persist.cne.feature=1`
+is set and the daemon that acts on it never sees it, and libcne cannot find the WLAN interface it is
+meant to be evaluating. Same failure as the `bluetooth.core.le.vendor_capabilities.enabled` entry in
+`sepolicy/property_contexts`: a property whose reader cannot see it, so the setting silently does
+nothing.
+
+Device patch 0031 gives those two prefixes their own `vendor_cne_prop` type and grants `cnd` that
+plus `wifi_hal_prop`. Deliberately not by widening `default_prop`, which would hand `cnd` read
+access to every unlabelled property on the system. `persist.data.iwlan.*` is left where it is:
+`netmgrd` and `qmuxd` read those and are **not** denied `default_prop`, so relabelling would remove
+access they currently have.
+
+**Unverified at time of writing** -- this is diagnosis plus a fix that has not yet been on hardware.
+The test is whether `pref data tech` stops saying UNKNOWN; IWLAN appearing in the `prep` list is the
+real prize. `persist.vendor.cnd.iwlan` and `persist.vendor.cnd.wqe` are both read by libcne and both
+unset, and are the obvious next step -- but worth nothing until CNE can read that property space.
+
+Two traps that cost time here:
+
+- **`ps | grep cne` finds nothing, and CNEService is running anyway.** It is hosted in the
+  `.dataservices` process (`*PERS* UID 1000 ProcessRecord{...:.dataservices}` with
+  `class=com.quicinc.cne.CNEService.CNEServiceApp`). Check `dumpsys activity processes`, not `ps`.
+- **`setenforce 0` plus a `cnd` restart is not a valid test of this.** CNE evaluates its
+  configuration at boot; a permissive *boot* is the experiment, not a permissive restart.
