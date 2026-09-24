@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Thu, 24 Sep 2026 07:02:59 -0400
+Date: Thu, 24 Sep 2026 08:30:09 -0400
 Subject: [PATCH] ether: ship nanopb 0.2.8 for the QTI RIL blob
 
 libril-qc-qmi-1.so imports pb_encode/pb_decode instead of carrying its own nanopb, and its
@@ -11,21 +11,25 @@ reads every field as the next type along and nothing the IMS service sends decod
 libril keeps the modern runtime, because librilutils generates its SAP descriptors with the modern
 generator, and now hides its pb_* exports. This adds the 0.2.8 runtime as a separate vendor library
 and shims it onto the blob, which already carries two other shims, so the mechanism is proven on this
-exact library.
+exact library -- confirmed on hardware by libnanopb_legacy appearing in rild's maps.
+
+Built at 0.2.8's default 8-bit field width. Forcing 32-bit reproduced the original SIGSEGV in
+encode_field, from the blob this time, because the iterator stride runs off the end of the
+descriptor array.
 
 Sources are verbatim from external/nanopb-c at tag android-7.1.1_r1 -- five files, zlib licence --
-rather than fetched, so the version is pinned to what this device's own stock ROM was built with.
+so the version is pinned to what this device's own stock ROM was built with.
 ---
  BoardConfig.mk           |    8 +
  device.mk                |    4 +
- nanopb-0.2.8/Android.bp  |   42 ++
+ nanopb-0.2.8/Android.bp  |   44 ++
  nanopb-0.2.8/LICENSE.txt |   20 +
  nanopb-0.2.8/pb.h        |  519 +++++++++++++++++
  nanopb-0.2.8/pb_decode.c | 1178 ++++++++++++++++++++++++++++++++++++++
  nanopb-0.2.8/pb_decode.h |  149 +++++
  nanopb-0.2.8/pb_encode.c |  667 +++++++++++++++++++++
  nanopb-0.2.8/pb_encode.h |  154 +++++
- 9 files changed, 2741 insertions(+)
+ 9 files changed, 2743 insertions(+)
  create mode 100644 nanopb-0.2.8/Android.bp
  create mode 100644 nanopb-0.2.8/LICENSE.txt
  create mode 100644 nanopb-0.2.8/pb.h
@@ -70,10 +74,10 @@ index af1dfbd..a139079 100644
  PRODUCT_PACKAGES += android.hardware.telephony.ims.prebuilt.xml
 diff --git a/nanopb-0.2.8/Android.bp b/nanopb-0.2.8/Android.bp
 new file mode 100644
-index 0000000..d290186
+index 0000000..d34cc35
 --- /dev/null
 +++ b/nanopb-0.2.8/Android.bp
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,44 @@
 +//
 +// nanopb 0.2.8 -- the version Android 7.1.1 shipped, kept here for one reason.
 +//
@@ -105,11 +109,13 @@ index 0000000..d290186
 +    ],
 +    export_include_dirs: ["."],
 +
-+    // The descriptors this runtime is asked to read were built with malloc support and 32-bit
-+    // fields, matching how QTI built it.
++    // Default field width. 0.2.8's pb_size_t is uint8_t unless PB_FIELD_16BIT/32BIT says otherwise,
++    // and the blob's descriptors were built that way: forcing 32-bit here reproduced the original
++    // SIGSEGV in encode_field exactly, because the iterator stride runs off the end of the array.
++    //
++    // PB_ENABLE_MALLOC is kept -- 0.2.8 needs it for the pointer-type fields these descriptors use.
 +    cflags: [
 +        "-DPB_ENABLE_MALLOC",
-+        "-DPB_FIELD_32BIT",
 +        "-Wno-unused-parameter",
 +        "-Wno-sign-compare",
 +    ],
