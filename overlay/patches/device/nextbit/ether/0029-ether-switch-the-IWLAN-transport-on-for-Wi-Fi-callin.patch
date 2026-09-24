@@ -1,53 +1,42 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Thu, 24 Sep 2026 16:17:58 -0400
+Date: Thu, 24 Sep 2026 17:34:34 -0400
 Subject: [PATCH] ether: switch the IWLAN transport on for Wi-Fi calling
 
 The modem takes the Wi-Fi calling configuration and then does nothing with it: the IMS log shows
-wifi_call: 2 and wfc_preference = 3 stored and acknowledged, and no ePDG registration is ever
+wifi_call: 2 and wfc_preference stored and acknowledged, and no ePDG registration is ever
 attempted, so isVowifiEnabled stays false and a forced WFC call reports "connect to a wireless
 network" while connected to one.
 
-persist.data.iwlan.enable is the QTI switch for the IWLAN data path an ePDG tunnel rides on. Stock
-sets it on this device and this port did not carry it over, which fits the symptom exactly:
-configuration accepted, transport switched off, nothing to register over.
+persist.data.iwlan.enable is the QTI switch for the IWLAN data path an ePDG tunnel rides on; both
+netmgrd and qmuxd read it. Stock sets it on this device and this port did not carry it over.
 
-persist.radio.app_hw_mbn_path comes from the same diff of stock's build.prop. It points the modem at
-the hardware MBN configs on /firmware, which is the stock modem partition and untouched by this
-build, so the path is stock's own.
-
-persist.radio.VT_CAM_INTERFACE is deliberately not copied: video telephony is switched off and
-cannot work here regardless.
+Worth recording: the T-Mobile config in the modem image does carry ePDG --
+mcfg_sw/generic/na/tmo/commerci/mcfg_sw.mbn has epdg_fqdn ss.epdg.epc.mnc260.mcc310 and IWLAN in
+its Supported_RAT_Priority_List -- so the capability is present and this is worth pursuing.
 ---
- device.mk | 19 +++++++++++++++++++
- 1 file changed, 19 insertions(+)
+ device.mk | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index d2d6d0f..9fd9b18 100644
+index d2d6d0f..b38fb03 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -391,6 +391,25 @@ PRODUCT_PACKAGES += libshim_vtsurface
+@@ -391,6 +391,18 @@ PRODUCT_PACKAGES += libshim_vtsurface
  # want to avoid blocking the binder thread".
  PRODUCT_PROPERTY_OVERRIDES += ro.telephony.block_binder_thread_on_incoming_calls=false
  
-+# Two properties the stock 7.1 ROM sets on this exact device and we did not carry over. Found by
-+# diffing stock's build.prop against ours while chasing Wi-Fi calling.
-+#
 +# persist.data.iwlan.enable is the QTI switch for the IWLAN data path, which is what an ePDG tunnel
-+# rides on. Without it the modem accepts the Wi-Fi calling configuration -- the log shows
-+# wifi_call: 2 and wfc_preference 3 stored and acknowledged -- and then never attempts to register,
-+# because the transport it would use is switched off. That matches the symptom exactly: WFC config
-+# accepted, no IWLAN registration, isVowifiEnabled=false.
++# rides on. Stock sets it on this device and this port did not carry it over. Without it the modem
++# accepts the Wi-Fi calling configuration -- the log shows wifi_call: 2 and wfc_preference stored
++# and acknowledged -- and then never attempts to register, because the transport it would use is
++# switched off. netmgrd and qmuxd both read it.
 +#
-+# persist.radio.app_hw_mbn_path tells the modem where to find its hardware MBN configs. /firmware is
-+# the stock modem partition and untouched by this build, so the path is stock's own; a path that did
-+# not exist would behave the same as leaving it unset.
-+#
-+# Note what is NOT copied: persist.radio.VT_CAM_INTERFACE, because video telephony is deliberately
-+# off (config_device_vt_available, above) and cannot work regardless.
-+PRODUCT_PROPERTY_OVERRIDES += \
-+    persist.data.iwlan.enable=true \
-+    persist.radio.app_hw_mbn_path=/firmware/image/modem_pr/mcfg/configs/mcfg_hw/generic/common/MSM8994/LA
++# Not copied from stock's build.prop, despite being next to it there:
++#   persist.radio.app_hw_mbn_path -- nothing in this image reads it, and stock's value points at
++#     /firmware/image/modem_pr/..., which does not exist; the real tree is /firmware/image/mdm/....
++#   persist.radio.VT_CAM_INTERFACE -- video telephony is deliberately off (config_device_vt_available).
++PRODUCT_PROPERTY_OVERRIDES += persist.data.iwlan.enable=true
 +
  # nanopb 0.2.8, for libril-qc-qmi-1.so alone. See nanopb-0.2.8/Android.bp for why a second copy of
  # nanopb has to exist at all.
