@@ -15,7 +15,6 @@ panel up.
 Read in initDialog() rather than cached, because initDialog() runs again on configuration change --
 caching it would leave a rotated panel at the offset computed for the other orientation, and a
 device can qualify the dimen with values-land if it needs different values.
-
 ---
  packages/SystemUI/res/values/dimens.xml                      | 5 +++++
  .../src/com/android/systemui/volume/VolumeDialogImpl.java    | 5 +++++

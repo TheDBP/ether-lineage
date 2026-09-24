@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Thu, 24 Sep 2026 19:29:16 -0400
+Subject: [PATCH] ether: volume panel -150dp, measured against the keys rather
+ than fitted
+
+-180dp overshot. The first number came from fitting a homography to a photo of the
+device and locating the keys alone; this one is measured from a photo with the panel
+and the keys in the same frame, which removes the fit error. 29dp lower.
+---
+ .../base/packages/SystemUI/res/values/dimens.xml      | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml b/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
+index 01e386d..89a616c 100644
+--- a/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
++++ b/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
+@@ -4,8 +4,11 @@
+          stock centred panel sits well below the keys being pressed. Measured by fitting a
+          homography from a photo of the device to screen coordinates using four on-screen landmarks:
+          the two buttons come out at y 505 and y 694 of 1920, midpoint 600. The panel's own centre
+-         is 961 (it spans 607..1315), so it wants to come up 361px, which is 180dp at this density.
+-         An independent check point held back from the fit landed 2.4% of screen height out, which
+-         is the accuracy to expect here. -->
+-    <dimen name="volume_dialog_offset_y">-180dp</dimen>
++         is 961 (it spans 607..1315).
++
++         -180dp was the first fit and overshot. Re-measured against a photo of the panel and the
++         keys in the same frame, which is a far better comparison than fitting the keys alone: the
++         panel came out 65 photo-px high against a panel height of 795 photo-px for 708 device px,
++         so 58 device px = 29dp too far. The keys are at device y 659, about 34% of the screen. -->
++    <dimen name="volume_dialog_offset_y">-150dp</dimen>
+ </resources>
