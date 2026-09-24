@@ -1173,3 +1173,42 @@ That is fine, because the goal was never video. `ImsVideoGlobals.init()` needs o
 libs. Making it load lets us delete three fragile smali rewrites -- the init removal, the
 `openForSub` surgery and the `maybeCreateVideoProvider` no-op -- each of which has already cost a
 build cycle.
+
+## VOLTE WORKS (2026-09-24)
+
+Outgoing call connects over IMS with the HD indicator and **two-way audio**, verified on hardware.
+
+What made the difference, in the order it mattered:
+
+1. `config_device_volte_available` under `values-mcc310-mnc240`. It had been under `-mnc260`, and
+   the SIM reports 310240 while the network reports 310260. One boolean, resolved from the wrong
+   directory, and the framework never asked for voice, so the modem never registered, so the only
+   thing the listener could report was "disconnected". That looked like a broken registration
+   listener in our bridge for days.
+2. `readParcelable(null)` repointed at the app class loader. The rename moved these classes off the
+   boot classpath, where a null loader could no longer find them, so every `createCallSession`
+   threw.
+3. `libshim_vtsurface` plus the 3560 -> 8168 allocation rewrite, which let `ImsVideoGlobals.init()`
+   run for the first time on 13. That initialised `CameraController` and `LowBatteryHandler`
+   and closed all six "Not initialized" crash sites at once, instead of the sixth and seventh
+   rounds of patching individual call sites.
+
+Final boot, before the call: 0 UnsatisfiedLinkError, 0 "Not initialized", `registered=true`,
+`isVolteEnabled=true`, `cap: 0 radioTech: 13 enabled`.
+
+### The media path never needed ims_rtp_daemon
+
+`ims_rtp_daemon` is **still not running** and `sys.ims.DATA_DAEMON_STATUS` is **still unset**, and
+audio works in both directions anyway. So the assumption that the RTP daemon gates VoLTE audio on
+this device was wrong: voice media goes modem-to-DSP without the AP-side daemon, which only matters
+for paths we do not have (VT, and some carrier configurations). The earlier sweep showing the whole
+RTP stack ABI-clean was correct but beside the point.
+
+**Do not "fix" `imsdatadaemon` sitting idle.** It is idle because nothing needs it.
+
+### Still open
+
+- Wi-Fi calling: the platform gate is open (the toggle appears, `carrier_wfc_ims_available_bool`
+  and `config_device_wfc_ims_available` are both true) but IWLAN registration is untested.
+- Video calling is deliberately off and cannot be revived: `lib-imsvt.so` needs `IOMXObserver` and
+  `IGraphicBufferAlloc`, platform interfaces deleted outright.
