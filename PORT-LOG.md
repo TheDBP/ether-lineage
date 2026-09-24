@@ -211,3 +211,46 @@ Rules that cost a build each when missed:
   (media: 1 commit, zero functional; display: 5 commits, all in `gpu_tonemapper`/`gralloc`/`hwc`;
   audio: 2 commits). The ether builds none of the changed components — its HWC comes from prebuilt
   blobs.
+
+## The flashlight is not on the PMIC (2026-09-24)
+
+The Robin's camera flash is a **TI LM3646**, an I2C flash driver on the CCI bus, strobed by two
+PM8994 GPIOs. `arch/arm64/boot/dts/fih/nbq/msm8992-camera-sensor-mtp-nbq.dtsi`:
+
+    led_flash0: qcom,led-flash@ce {
+        compatible = "ti,lm3646";
+        qcom,flash-type = <1>;
+        gpios = <&pm8994_gpios 1 0>, <&pm8994_gpios 2 0>;   /* FLASH_EN, FLASH_NOW */
+        qcom,max-current = <1200 1200>;
+    };
+
+`/sys/class/leds/led:torch_0`, `led:torch_1`, `led:flash_0`, `led:flash_1` belong to the PMI8994
+`qpnp-flash-led` block and exist only because QCOM's reference `msm-pmi8994.dtsi` is included.
+**Nothing is wired to them on this board.** Writing them programs the PMIC happily -- module enable
+`0xd342` goes `0x00 -> 0x0f`, strobe ctrl `0xd347` goes `0x40 -> 0xc0` -- and emits no light, at any
+current, on either channel, in torch or flash mode. Measured, not inferred.
+
+Two corroborating facts, either of which would have saved the detour:
+
+- `pmi8994_boostbypass` and `pon_spare_reg` sit at `state=disabled use=0` with the torch commanded
+  at max. `use=0` means no consumer ever acquired them: the DTS torch nodes carry `regulator-name`
+  children but **no `<name>-supply` phandle**, so `regulator_get()` cannot resolve them. That block
+  could never light even if it were wired.
+- The stock 7.1 camera HAL exports no `set_torch_mode` and no `QCameraFlash` at all -- only
+  `CameraParameters::FLASH_MODE_TORCH`. Stock had no torch API; its flashlight went through the
+  camera pipeline, because that is the only path to the LM3646.
+
+The device tree's sysfs `QCameraFlash` was therefore aimed at the wrong hardware from the start, and
+patch 0024 (sepolicy label + ueventd rules for those sysfs nodes, plus a `strobe` write) is aimed at
+the wrong hardware too. `strobe` is separately wrong: `qpnp_led_strobe_type_store` selects hardware
+vs software strobe (`'0' for sw strobe; '1' for hw strobe`), it is not an output gate, and
+`FLASH_LED_STROBE_TYPE_HW` (0x40) collides with `FLASH_LED1_TRIGGER` (0x40).
+
+**The fix is the camera subdev.** `/dev/v4l-subdev9` is `msm_flash`, and
+`include/media/msm_camsensor_sdk.h` gives the interface:
+
+    enum msm_flash_cfg_type_t { CFG_FLASH_INIT, CFG_FLASH_RELEASE, CFG_FLASH_OFF,
+                                CFG_FLASH_LOW, CFG_FLASH_HIGH };
+
+`CFG_FLASH_LOW` is torch. Rework `QCameraFlash` to INIT / LOW / OFF / RELEASE against that subdev
+instead of writing sysfs. The camera HAL already has the access, which is why the camera app works.
