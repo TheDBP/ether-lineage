@@ -1,0 +1,180 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Thu, 24 Sep 2026 13:20:53 -0400
+Subject: [PATCH] ether: load the VT natives, and switch video calling off
+
+libimsmedia_jni.so imports android::Surface::Surface(sp<IGraphicBufferProducer> const&, bool). Android
+13 has only the three-argument form, so the symbol resolves nowhere, ImsMedia's static initialiser
+throws UnsatisfiedLinkError, and ImsVideoGlobals.init() takes the entire IMS service down at
+ImsService.onCreate. rebuild-app.sh deleted that init() call, and the four singletons it would have
+created then failed one at a time: openForSub's getInstance(), maybeCreateVideoProvider's
+CameraController, and maybeUpdateLowBatteryStatus's LowBatteryHandler, the last of which was a FATAL
+EXCEPTION on com.android.phone every time the modem reported a call.
+
+libshim_vtsurface supplies the missing constructor by placement-constructing the modern one, the
+third argument defaulting to nullptr. It is only safe because extract-ims-blobs.sh separately
+rewrites the blob's allocation: it does `new Surface(...)` with sizeof(Surface) baked in at compile
+time, which was 3560 bytes in 2016 and is 8168 now, measured at six independent call sites in the
+platform's own libandroid_runtime.so. Without that rewrite the shim overruns the heap by 4608 bytes.
+Symbol analysis with rom-forge/tools/abi-gap.sh: the JNI layer needs exactly this one symbol, and
+libimscamera_jni.so needs none.
+
+Video calling is switched off at the same time, and not because it is untested. lib-imsvt.so, the
+actual VT engine, imports IOMXObserver and IGraphicBufferAlloc, platform interfaces deleted outright
+when OMX moved to HIDL/Codec2, along with 59 others: 61 unresolved symbols that cannot be shimmed
+because the subsystems behind them no longer exist. It is not in the startup path (nothing links it,
+and the Java side loads only imsmedia_jni/imscamera_jni), so the shim is enough to let init() run,
+but video itself is not coming back. config_device_vt_available goes false in both MNC overlays,
+which is the device leg isVtEnabledByPlatform() ANDs with the carrier config: that removes the
+Carrier video calling toggle and stops the framework ever asking the vendor stack for VT.
+
+The three smali rewrites in rebuild-app.sh stay as belt and braces. They only disable video paths.
+---
+ BoardConfig.mk                                |  8 ++++
+ device.mk                                     |  4 ++
+ libshims/Android.mk                           | 10 +++++
+ libshims/vtsurface_shim.cpp                   | 41 +++++++++++++++++++
+ .../res/res/values-mcc310-mnc240/config.xml   |  9 +++-
+ .../res/res/values-mcc310-mnc260/config.xml   |  9 +++-
+ 6 files changed, 79 insertions(+), 2 deletions(-)
+ create mode 100644 libshims/vtsurface_shim.cpp
+
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index 829b5da..e19a8aa 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -174,6 +174,14 @@ TARGET_LD_SHIM_LIBS := \
+ TARGET_LD_SHIM_LIBS += \
+     /system/vendor/lib64/libril-qc-qmi-1.so|libnanopb_legacy.so
+ 
++# libimsmedia_jni.so calls android::Surface::Surface(sp<IGraphicBufferProducer> const&, bool), the
++# two-argument constructor Android 13 replaced with a three-argument one. Without this the VT
++# natives cannot dlopen, ImsMedia's static initialiser throws UnsatisfiedLinkError and the whole IMS
++# service dies at ImsService.onCreate. Pairs with the allocation rewrite in extract-ims-blobs.sh:
++# sizeof(Surface) grew 3560 -> 8168, and the blob allocates the object itself.
++TARGET_LD_SHIM_LIBS += \
++    /system/vendor/lib64/libimsmedia_jni.so|libshim_vtsurface.so
++
+ # WiFi
+ BOARD_HAS_QCOM_WLAN              := true
+ BOARD_HOSTAPD_DRIVER             := NL80211
+diff --git a/device.mk b/device.mk
+index a139079..5a21982 100644
+--- a/device.mk
++++ b/device.mk
+@@ -369,6 +369,10 @@ PRODUCT_PACKAGES += ims
+ # The bridge from that 7.1 IMS stack to the modern telephony framework. See VOLTE.md.
+ PRODUCT_PACKAGES += ImsBridge
+ 
++# Supplies the 7.1 two-argument android::Surface constructor that libimsmedia_jni.so imports, so the
++# VT natives can dlopen and ImsVideoGlobals.init() can run. See BoardConfig.mk TARGET_LD_SHIM_LIBS.
++PRODUCT_PACKAGES += libshim_vtsurface
++
+ # nanopb 0.2.8, for libril-qc-qmi-1.so alone. See nanopb-0.2.8/Android.bp for why a second copy of
+ # nanopb has to exist at all.
+ PRODUCT_PACKAGES += libnanopb_legacy
+diff --git a/libshims/Android.mk b/libshims/Android.mk
+index 4d8c1f7..6804d6b 100644
+--- a/libshims/Android.mk
++++ b/libshims/Android.mk
+@@ -76,3 +76,13 @@ LOCAL_VENDOR_MODULE := true
+ LOCAL_LDFLAGS := -Wl,-z,global
+ 
+ include $(BUILD_SHARED_LIBRARY)
++
++include $(CLEAR_VARS)
++
++LOCAL_SRC_FILES := vtsurface_shim.cpp
++LOCAL_MODULE := libshim_vtsurface
++LOCAL_MODULE_CLASS := SHARED_LIBRARIES
++LOCAL_SHARED_LIBRARIES := libgui libutils
++LOCAL_VENDOR_MODULE := true
++
++include $(BUILD_SHARED_LIBRARY)
+diff --git a/libshims/vtsurface_shim.cpp b/libshims/vtsurface_shim.cpp
+new file mode 100644
+index 0000000..5e9ad2d
+--- /dev/null
++++ b/libshims/vtsurface_shim.cpp
+@@ -0,0 +1,41 @@
++/*
++ * Copyright (C) 2026 The LineageOS Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * libimsmedia_jni.so (7.1) calls the two-argument Surface constructor:
++ *
++ *     android::Surface::Surface(const sp<IGraphicBufferProducer>&, bool)
++ *
++ * Android 13 has only the three-argument form, the third being a surface control handle that
++ * defaults to nullptr, so the old mangled name resolves nowhere and ImsMedia's static initialiser
++ * dies with UnsatisfiedLinkError -- taking the whole IMS service down at ImsService.onCreate.
++ *
++ * This is a constructor, not a function: the caller has already allocated storage and passes it as
++ * the implicit `this`. So the shim placement-constructs into that storage rather than returning
++ * anything. That is only safe because extract-ims-blobs.sh separately rewrites the blob's
++ * allocation from sizeof(Surface)-in-2016 (3560) to today's (8168). Without that rewrite this
++ * overruns the heap by 4608 bytes; see the note there.
++ */
++
++#include <gui/Surface.h>
++
++#include <new>
++
++extern "C" void _ZN7android7SurfaceC1ERKNS_2spINS_22IGraphicBufferProducerEEEb(
++        void* self, const android::sp<android::IGraphicBufferProducer>& bufferProducer,
++        bool controlledByApp) {
++    new (self) android::Surface(bufferProducer, controlledByApp);
++}
+diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
+index 9658dd3..60ee34b 100644
+--- a/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
++++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
+@@ -15,7 +15,14 @@
+      Keep this file in step with values-mcc310-mnc260/config.xml. -->
+ <resources>
+     <bool name="config_device_volte_available">true</bool>
+-    <bool name="config_device_vt_available">true</bool>
++    <!-- Video calling is off deliberately, not merely untested. The VT engine lib-imsvt.so
++         imports IOMXObserver and IGraphicBufferAlloc, platform interfaces Android deleted outright
++         when OMX moved to HIDL/Codec2: 61 unresolved symbols, and not shimmable. libshim_vtsurface
++         only gets the JNI layer loading so ImsVideoGlobals.init() can create its singletons; it
++         does not make video work. isVtEnabledByPlatform() ANDs this with the carrier's
++         KEY_CARRIER_VT_AVAILABLE_BOOL, so false here removes the Carrier video calling toggle and
++         stops the framework ever requesting a VT capability. -->
++    <bool name="config_device_vt_available">false</bool>
+     <bool name="config_device_wfc_ims_available">true</bool>
+     <!-- legacy leg some code paths still consult -->
+     <bool name="config_carrier_volte_available">true</bool>
+diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+index 7cbbfb1..602887b 100644
+--- a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
++++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+@@ -11,7 +11,14 @@
+      here). Paired with the T-Mobile-filtered CarrierConfig bundle in the CarrierConfig overlay. -->
+ <resources>
+     <bool name="config_device_volte_available">true</bool>
+-    <bool name="config_device_vt_available">true</bool>
++    <!-- Video calling is off deliberately, not merely untested. The VT engine lib-imsvt.so
++         imports IOMXObserver and IGraphicBufferAlloc, platform interfaces Android deleted outright
++         when OMX moved to HIDL/Codec2: 61 unresolved symbols, and not shimmable. libshim_vtsurface
++         only gets the JNI layer loading so ImsVideoGlobals.init() can create its singletons; it
++         does not make video work. isVtEnabledByPlatform() ANDs this with the carrier's
++         KEY_CARRIER_VT_AVAILABLE_BOOL, so false here removes the Carrier video calling toggle and
++         stops the framework ever requesting a VT capability. -->
++    <bool name="config_device_vt_available">false</bool>
+     <bool name="config_device_wfc_ims_available">true</bool>
+     <!-- legacy leg some code paths still consult -->
+     <bool name="config_carrier_volte_available">true</bool>

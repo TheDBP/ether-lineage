@@ -69,6 +69,37 @@ echo ">> staged $n file(s) into $REL"
 [ "$miss" -eq 0 ] || echo "!! $miss file(s) missing from the zip — the list and the image disagree" >&2
 echo ">> wrote $REL/ims-blobs.mk"
 
+# ---- libimsmedia_jni.so: the Surface allocation ------------------------------------------------
+# The blob does `new Surface(...)` and baked sizeof(android::Surface) into the allocation at compile
+# time. That was 3560 bytes on 7.1; on 13 it is 8168, measured at six independent `new Surface` call
+# sites in the platform's own libandroid_runtime.so. libshim_vtsurface.so placement-constructs a
+# modern Surface into whatever the blob allocated, so without this rewrite it overruns the heap by
+# 4608 bytes and the damage lands somewhere unrelated later.
+#
+# The constant appears exactly once, as MOVZ x0, #3560 (00 bd 81 d2 -> 00 fd 83 d2). Search for the
+# instruction rather than a fixed offset, and refuse to guess if the count is not exactly one.
+for _abi in lib64; do
+  _so="$DEST/vendor/$_abi/libimsmedia_jni.so"
+  [ -f "$_so" ] || continue
+  python3 - "$_so" <<'PYIN'
+import io, sys
+p = sys.argv[1]
+d = bytearray(io.open(p, 'rb').read())
+OLD = bytes((0xD2800000 | (3560 << 5)).to_bytes(4, 'little'))   # movz x0, #3560
+NEW = bytes((0xD2800000 | (8168 << 5)).to_bytes(4, 'little'))   # movz x0, #8168
+if d.count(NEW) and not d.count(OLD):
+    print('   already patched'); sys.exit(0)
+n = d.count(OLD)
+if n != 1:
+    print('!! expected exactly 1 "movz x0, #3560" in %s, found %d' % (p, n)); sys.exit(1)
+i = d.index(OLD)
+d[i:i+4] = NEW
+io.open(p, 'wb').write(bytes(d))
+print('   sizeof(Surface) 3560 -> 8168 at file offset 0x%x' % i)
+PYIN
+  [ $? -eq 0 ] || exit 1
+done
+
 # ---- ims.apk -----------------------------------------------------------------------------------
 # Not in proprietary-files-ims.txt and not copied verbatim: stock's ims.apk is 27 KB of manifest
 # with its code in an arm64 odex, and what it references -- com.android.ims -- Android 9 deleted.

@@ -127,25 +127,26 @@ left=$(grep -rhoE 'Ljava/lang/System;->arraycopy\(\[[A-Z]I\[[A-Z]II\)V' "$SRC" 2
 echo "   rewrote in $n file(s); specialized calls remaining: $left"
 [ "$left" -eq 0 ] || { echo "!! specialized arraycopy survived the rewrite" >&2; exit 1; }
 
-# Video telephony cannot load on 13 and takes the whole service down with it. ImsService.onCreate
-# calls ImsVideoGlobals.init(), whose static initialiser dlopens the VT natives, and those were
-# linked against a libgui that no longer exists:
-#     UnsatisfiedLinkError: dlopen failed: cannot locate symbol
-#     "_ZN7android7SurfaceC1ERKNS_2spINS_22IGraphicBufferProducerEEEb"
-#     at com.qualcomm.ims.vt.ImsMedia.<clinit> ... at ImsService.onCreate
-# i.e. android::Surface::Surface(sp<IGraphicBufferProducer> const&, bool). Shimming that is a
-# different project; the bridge already reports no video support (getVideoCallProvider returns
-# null), so drop the call. It returns void and its result is unused, so the line goes cleanly.
+# ImsService.onCreate calls ImsVideoGlobals.init(), whose static initialiser dlopens the VT natives.
+# That used to be fatal -- libimsmedia_jni.so wants android::Surface::Surface(sp<IGBP> const&, bool),
+# a two-argument constructor Android 13 no longer has, so ImsMedia.<clinit> threw UnsatisfiedLinkError
+# and took the whole IMS service down at onCreate. We deleted the call, and then spent four build
+# cycles patching out the singletons it would have created: openForSub's getInstance(),
+# maybeCreateVideoProvider's CameraController, and maybeUpdateLowBatteryStatus's LowBatteryHandler,
+# the last of which was killing com.android.phone on every call.
+#
+# libshim_vtsurface.so now supplies that constructor and extract-ims-blobs.sh resizes the blob's
+# allocation to match today's sizeof(Surface), so init() can run and create those singletons itself.
+# The call therefore STAYS. The three rewrites below are kept as belt and braces: they only disable
+# video paths, which cannot work regardless -- lib-imsvt.so needs IOMXObserver and
+# IGraphicBufferAlloc, platform interfaces that were deleted outright -- and video calling is now
+# switched off at the framework too via config_device_vt_available.
 if [ "$T" = "ims" ]; then
-  echo ">> dropping the video-telephony init that cannot dlopen on 13"
   f="$SRC/org/codeaurora/ims/ImsService.smali"
   [ -f "$f" ] || { echo "!! ImsService.smali not found" >&2; exit 1; }
-  before=$(grep -c 'ImsVideoGlobals;->init(' "$f")
-  [ "$before" -eq 1 ] || { echo "!! expected exactly 1 ImsVideoGlobals.init call, found $before" >&2; exit 1; }
-  sed -i '/invoke-static {.*}, Lcom\/qualcomm\/ims\/vt\/ImsVideoGlobals;->init(.*)V/d' "$f"
-  after=$(grep -c 'ImsVideoGlobals;->init(' "$f")
-  [ "$after" -eq 0 ] || { echo "!! the ImsVideoGlobals.init call survived" >&2; exit 1; }
-  echo "   removed 1 call"
+  keep=$(grep -c 'ImsVideoGlobals;->init(' "$f")
+  [ "$keep" -eq 1 ] || { echo "!! expected exactly 1 ImsVideoGlobals.init call, found $keep" >&2; exit 1; }
+  echo ">> keeping ImsVideoGlobals.init (libshim_vtsurface supplies the Surface ctor)"
 
   # Dropping init() is not enough on its own. openForSub does
   #     ImsVideoGlobals.getInstance().setActiveSub(sub)
