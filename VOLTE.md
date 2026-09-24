@@ -1116,3 +1116,60 @@ Fixed in `rebuild-app.sh`: each `readParcelable` site is repointed at the class'
 **Rule for the rename: a class that moves off the boot classpath breaks every `readParcelable(null)`,
 `readBundle()` and `readSerializable()` that used to resolve it.** Grep for those before blaming the
 transport.
+
+## Advance research: the media path has no ABI blockers (2026-09-24)
+
+Swept every IMS/RTP vendor library with `rom-forge/tools/abi-gap.sh`, which lists the symbols a
+prebuilt imports that the platform no longer exports:
+
+    lib-rtpcore.so             181 symbols, 0 unresolved
+    lib-rtpcommon.so            42 symbols, 0 unresolved
+    lib-rtpsl.so                64 symbols, 0 unresolved
+    lib-rtpdaemoninterface.so   22 symbols, 0 unresolved
+    lib-imsdpl.so              172 symbols, 0 unresolved
+    lib-dplmedia.so             61 symbols, 0 unresolved
+    lib-imsSDP.so / -imsqimf / -imss / -imsxml / -imsrcs*      all 0 unresolved
+    ims_rtp_daemon              94 symbols, 0 unresolved
+    imsdatadaemon              107 symbols, 0 unresolved
+
+**The entire voice media path is ABI-clean.** Nothing to shim, nothing to patch. If VoLTE audio
+fails it will not be because a 2016 binary cannot load.
+
+### Why ims_rtp_daemon has never started
+
+The init chain is intact and matches the stock ramdisk's own `init.target.rc` exactly:
+
+    on property:sys.ims.QMI_DAEMON_STATUS=1   -> start imsdatadaemon      (=1, running)
+    on property:sys.ims.DATA_DAEMON_STATUS=1  -> start ims_rtp_daemon     (never set)
+
+`imsdatadaemon` is alive and **idle**, not crashed: `state=S`, `wchan=poll_schedule_timeout`, and
+utime/stime frozen at 2/1 across a five-second sample. No SELinux denials. It owns
+`sys.ims.datadaemon.ims.netid` (nothing else on the device references that property) and listens on
+`/dev/socket/ims_datad` with **zero connections**, while `/dev/socket/qmux_radio/rild_ims0` shows a
+live connected pair -- so the QMI path to the modem is up and only the data daemon is unstimulated.
+Its client library is `lib-imsdpl.so`, which is ABI-clean.
+
+Nothing is broken here. The daemon is waiting to be asked, and nothing has asked it because no call
+has ever set up. Do not "fix" this before a call completes.
+
+## VT ABI: scoped, and smaller than lib-imsvt.so makes it look (2026-09-24)
+
+    libimscamera_jni.so    14 symbols,  0 unresolved
+    libimsmedia_jni.so     18 symbols,  1 unresolved   <- android::Surface::Surface(sp<IGBP>&, bool)
+    lib-imsvt.so          266 symbols, 61 unresolved   <- NOT in the init path
+
+`lib-imsvt.so` looks fatal and is not relevant: nothing links it, `libimsmedia_jni.so` does not
+depend on it, and the Java side loads only `imsmedia_jni`/`imscamera_jni`. It is dlopened later, if
+a video call actually starts. Its 61 gaps are two different problems:
+
+- ~45 `Rcc*` rate-control symbols live in **`librcc.so`, which exists in the stock ROM and we never
+  extracted** -- a plain omission in `proprietary-files-ims.txt`.
+- The rest are genuinely dead platform API: `IGraphicBufferAlloc` (deleted),
+  `IOMXObserver` (the pre-Treble OMX binder interface, replaced wholesale by HIDL/Codec2),
+  `MediaBuffer(sp<GraphicBuffer> const&)`. Those are removed subsystems, not grown types, and are
+  not shimmable. **Video calls are not coming back.**
+
+That is fine, because the goal was never video. `ImsVideoGlobals.init()` needs only the two JNI
+libs. Making it load lets us delete three fragile smali rewrites -- the init removal, the
+`openForSub` surgery and the `maybeCreateVideoProvider` no-op -- each of which has already cost a
+build cycle.
