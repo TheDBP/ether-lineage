@@ -902,12 +902,11 @@ new file mode 100644
 index 0000000..ce40146
 --- /dev/null
 +++ b/ims-bridge/src/org/lineageos/ims/bridge/RegistrationListenerAdapter.java
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,84 @@
 +package org.lineageos.ims.bridge;
 +
 +import android.net.Uri;
 +import android.os.RemoteException;
-+import android.util.Log;
 +
 +import org.codeaurora.ims.legacy.ImsReasonInfo;
 +import org.codeaurora.ims.legacy.internal.IImsRegistrationListener;
@@ -915,13 +914,16 @@ index 0000000..ce40146
 +/**
 + * Presents the platform's modern registration listener to ims.apk as a 7.1 one.
 + *
-+ * Ten of the eleven 7.1 callbacks exist unchanged on 13 and forward directly. The exception is
-+ * registrationFeatureCapabilityChanged, which 13 dropped; it is logged and discarded rather than
-+ * mapped onto something approximate. (13 gained registrationChangeFailed, which 7.1 never calls.)
++ * All eleven 7.1 callbacks exist unchanged on 13 and forward directly. (13 gained
++ * registrationChangeFailed, which 7.1 never calls.)
++ *
++ * registrationFeatureCapabilityChanged is the important one and is easy to dismiss: it carries the
++ * enabled-feature bitmap, and MmTelFeatureCompatAdapter turns exactly this callback into
++ * MmTelCapabilities via notifyCapabilitiesStatusChanged. Drop it and the framework sees
++ * "Voice: false", decides IMS cannot carry a call, and routes to circuit-switched -- which on a
++ * carrier with no 2G/3G means the call simply fails.
 + */
 +class RegistrationListenerAdapter extends IImsRegistrationListener.Stub {
-+    private static final String TAG = ImsBridgeService.TAG;
-+
 +    private final com.android.ims.internal.IImsRegistrationListener mTarget;
 +
 +    RegistrationListenerAdapter(com.android.ims.internal.IImsRegistrationListener target) {
@@ -971,8 +973,8 @@ index 0000000..ce40146
 +
 +    @Override
 +    public void registrationFeatureCapabilityChanged(int serviceClass,
-+            int[] enabledFeatures, int[] disabledFeatures) {
-+        Log.d(TAG, "registrationFeatureCapabilityChanged dropped: no equivalent on 13");
++            int[] enabledFeatures, int[] disabledFeatures) throws RemoteException {
++        mTarget.registrationFeatureCapabilityChanged(serviceClass, enabledFeatures, disabledFeatures);
 +    }
 +
 +    @Override
