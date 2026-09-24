@@ -751,13 +751,45 @@ healthy, and the visible symptom was telephony cycling Mint -> No Service -> no 
 restarting every ~5 s leaves the subscription unable to hold its slot. **Telephony cycling like that
 is worth checking rild's pid before believing anything about the SIM.**
 
-### Still open
+### The media path: a missing IMS APN
 
-- `sys.ims.DATA_DAEMON_STATUS` unset, so `ims_rtp_daemon` never starts -- that is the media path, so
-  registration is up but a call has no RTP. Next thing to chase.
-- `carrier_volte_available_bool` reads **false** from the carrier config and **true** from the device
-  overlay. Mint/T-Mobile does not recognise this device, so carrier-side provisioning is the other
-  half and is not ours to fix.
+`sys.ims.DATA_DAEMON_STATUS` is never set, so init never starts `ims_rtp_daemon` -- registration is
+up but a call would have no RTP. `imsdatadaemon` runs and is *idle*, not crashing: `state=S`,
+`wchan=poll_schedule_timeout`, utime 0. Its logs go to `/dev/diag`, not logcat, which is why it looks
+silent.
+
+Root cause is in the APN database, not the daemon. `strings` on the binary shows it calls
+`dsi_get_data_srvc_hndl` for the IMS ApnType, and:
+
+    310240 (Mint, this SIM)   6 APN rows, ZERO with type=ims
+    310260 (T-Mobile proper)  33 rows, 8 with type=ims
+
+Android matches APNs on the SIM's own operator numeric, so the 310260 IMS rows are unreachable even
+though the SIM registers on 310260 as an EHPLMN. With no IMS PDN defined there is nothing for the
+data daemon to attach to.
+
+Fixed in `overlay/patches/vendor/apn/0001-US-add-the-missing-IMS-APN-for-310240-Mint.patch`, mirroring
+the ungated `T-Mobile US IMS` row and gated to Mint's gid (`756D`) exactly as Mint's existing data row
+is, so the other MVNOs sharing 310240 are untouched. The APN database is generated at build time from
+`vendor/apn/<CC>.xml`, so this needs a build -- it is not pushable.
+
+### Carrier config was NOT the problem
+
+An earlier note here claimed `carrier_volte_available_bool` read false from carrier config and that
+Mint/T-Mobile was refusing the device. **That was a misreading.** `dumpsys carrier_config` prints two
+blocks and the first is `Default Values from CarrierConfigManager`, where every IMS key is false by
+definition. The block that applies is `mConfigFromDefaultApp`, and for this SIM
+(`carrierId=1`, `carrier_config_carrierid_1_T-Mobile-US.xml`) it reads:
+
+    carrier_volte_available_bool     true
+    carrier_wfc_ims_available_bool   true
+    carrier_vt_available_bool        true
+    carrier_ims_gba_required_bool    true
+
+So VoLTE is enabled carrier-side. Read `mConfigFromDefaultApp`, never the defaults block.
+
+Worth remembering for later: `carrier_ims_gba_required_bool=true` means T-Mobile expects GBA for IMS
+authentication. Registration already succeeds, so it is not blocking now.
 
 ### A build trap that cost a cycle
 
