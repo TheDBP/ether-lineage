@@ -20,6 +20,15 @@ set -u
 ZIP="${1:?usage: deodex-app.sh <stock-rom.zip> <workdir> <ims|cne>}"
 W="${2:?usage: deodex-app.sh <stock-rom.zip> <workdir> <ims|cne>}"
 T="${3:?usage: deodex-app.sh <stock-rom.zip> <workdir> <ims|cne>}"
+# baksmali/smali come from the Android tree. Look where the tree actually is -- this runs both from
+# the host (tree under build_output/src) and from inside the container (tree at /aosp, cwd /aosp).
+if [ -z "${SMALI_DIR:-}" ]; then
+  for _c in build_output/src/prebuilts/extract-tools/common/smali \
+            prebuilts/extract-tools/common/smali \
+            /aosp/prebuilts/extract-tools/common/smali; do
+    [ -f "$_c/baksmali.jar" ] && SMALI_DIR="$_c" && break
+  done
+fi
 SMALI_DIR="${SMALI_DIR:-build_output/src/prebuilts/extract-tools/common/smali}"
 [ -f "$ZIP" ] || { echo "!! no such zip: $ZIP" >&2; exit 1; }
 BK="$SMALI_DIR/baksmali.jar"; SM="$SMALI_DIR/smali.jar"

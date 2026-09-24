@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 22:01:36 -0400
+Subject: [PATCH] ether: stage the IMS blobs from the build, not from a
+ remembered command
+
+vendor/ims-blobs was produced by running extract-ims-blobs.sh by hand before a build. That failed
+silently in the worst possible way: the directory sits outside vendor/extra, so the overlay clear
+never touches it. A tree where the script had been run once kept building ROMs with VoLTE, while a
+fresh clone of the same repo built ROMs without it and printed nothing -- same command, same commit,
+different image.
+
+device.mk now stages them itself at product-config time, guarded on the output so it runs once. The
+blobs come from the user's own stock ROM and cannot be committed, so making this a build step is the
+only way bootstrap.sh alone is sufficient.
+
+The include is deliberately hard rather than -include, and a missing stock ROM is a $(error) naming
+the file it wants: a ROM whose VoLTE is quietly absent is exactly what this replaces.
+
+Verified by moving vendor/ims-blobs aside and parsing product config in the container: staging fires,
+56 files land, get_build_var returns lineage_ether, and the apk is the same work as the hand-run
+path -- 325 classes, zero hidden-API arraycopy calls, zero ImsVideoGlobals.init, 157 files on the
+renamed legacy package.
+---
+ device.mk | 27 ++++++++++++++++++++++++---
+ 1 file changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/device.mk b/device.mk
+index 9209271..af1dfbd 100644
+--- a/device.mk
++++ b/device.mk
+@@ -336,9 +336,30 @@ endif
+ # through to the skin's. -include, so a build without the pack staged is still fine.
+ -include vendor/extra/oem-assets/assets-vars.mk
+ 
+-# IMS / VoLTE blobs, staged out of the stock zip by extract-ims-blobs.sh. -include, because the
+-# file only exists when that script has run: a build without it is simply a build without IMS.
+--include vendor/ims-blobs/ims-blobs.mk
++# IMS / VoLTE blobs and the rebuilt ims.apk, staged out of the stock ROM at product-config time.
++#
++# This used to be a hand-run step before the build, and that failed silently in the worst way:
++# vendor/ims-blobs sits outside vendor/extra, so the overlay clear never touches it. A tree where the
++# script had been run once kept producing ROMs with IMS, while a fresh clone produced ROMs without it
++# and said nothing -- same command, same repo, different image.
++#
++# The blobs come from the user's own stock ROM and cannot be committed, so staging them is part of
++# the build rather than a prerequisite to remember. The wildcard guard makes it run once; every later
++# build sees the .mk and skips straight past.
++ifeq ($(wildcard vendor/ims-blobs/ims-blobs.mk),)
++  # /repo is the device repo inside the build container; the second path is for a host-side build.
++  _ether_stock := $(firstword $(wildcard /repo/Ether_Stock_ROM_*.zip) $(wildcard $(LOCAL_PATH)/../../../../Ether_Stock_ROM_*.zip))
++  ifeq ($(_ether_stock),)
++    $(error ether: no Ether_Stock_ROM_*.zip found, so the IMS blobs cannot be staged. Put the stock \
++ROM in the device repo root, or see VOLTE.md. Refusing to build a ROM that silently lacks VoLTE.)
++  endif
++  $(info ether: staging IMS blobs from $(notdir $(_ether_stock)) -- first build only, ~2 min)
++  $(info $(shell $(dir $(_ether_stock))extract-ims-blobs.sh $(_ether_stock) . 2>&1 | tail -4))
++endif
++# Deliberately a hard include, not -include: if the staging above did not produce this file the build
++# must stop. Shipping a ROM whose VoLTE is quietly absent is the failure this whole block exists to
++# prevent.
++include vendor/ims-blobs/ims-blobs.mk
+ 
+ # The rebuilt ims.apk, imported rather than copied: AOSP rejects APKs in PRODUCT_COPY_FILES, and
+ # this one must be signed with the platform key because it declares sharedUserId=android.uid.phone.

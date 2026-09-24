@@ -28,6 +28,15 @@ set -u
 
 W="${1:?usage: rebuild-app.sh <workdir> <ims|cne>}"
 T="${2:?usage: rebuild-app.sh <workdir> <ims|cne>}"
+# baksmali/smali come from the Android tree. Look where the tree actually is -- this runs both from
+# the host (tree under build_output/src) and from inside the container (tree at /aosp, cwd /aosp).
+if [ -z "${SMALI_DIR:-}" ]; then
+  for _c in build_output/src/prebuilts/extract-tools/common/smali \
+            prebuilts/extract-tools/common/smali \
+            /aosp/prebuilts/extract-tools/common/smali; do
+    [ -f "$_c/baksmali.jar" ] && SMALI_DIR="$_c" && break
+  done
+fi
 SMALI_DIR="${SMALI_DIR:-build_output/src/prebuilts/extract-tools/common/smali}"
 BK="$SMALI_DIR/baksmali.jar"; SM="$SMALI_DIR/smali.jar"
 for j in "$BK" "$SM"; do [ -f "$j" ] || { echo "!! missing $j (set SMALI_DIR)" >&2; exit 1; }; done
