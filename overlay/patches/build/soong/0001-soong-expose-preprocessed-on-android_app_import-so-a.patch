@@ -60,6 +60,3 @@ index 58c01a447..d5a1b3aa2 100644
  	// Uncompress JNI libraries in the apk
  	jnisUncompressed := android.PathForModuleOut(ctx, "jnis-uncompressed", ctx.ModuleName()+".apk")
  	a.uncompressEmbeddedJniLibs(ctx, srcApk, jnisUncompressed.OutputPath)
--- 
-2.53.0
-

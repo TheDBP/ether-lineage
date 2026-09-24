@@ -13,10 +13,10 @@ could not keep the SoC awake.
  1 file changed, 2 insertions(+)
 
 diff --git a/rootdir/init.qcom.rc b/rootdir/init.qcom.rc
-index 6126513..6f67747 100644
+index ceba47e..96d1aea 100644
 --- a/rootdir/init.qcom.rc
 +++ b/rootdir/init.qcom.rc
-@@ -237,6 +237,8 @@ service start_hci_filter /vendor/bin/wcnss_filter
+@@ -231,6 +231,8 @@ service start_hci_filter /vendor/bin/wcnss_filter
      class late_start
      user bluetooth
      group bluetooth oem_2950 system wakelock
@@ -25,6 +25,3 @@ index 6126513..6f67747 100644
      disabled
      writepid /dev/cpuset/system-background/tasks
  
--- 
-2.53.0
-

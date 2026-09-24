@@ -218,6 +218,3 @@ index 0000000..da05963
 +# NetworkStack, not here -- but a WiFi daemon being denied its own
 +# configuration properties is worth closing regardless.
 +get_prop(wcnss_service, default_prop)
--- 
-2.53.0
-

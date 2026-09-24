@@ -26,6 +26,3 @@ index 404d91e..3bfbe48 100644
  # Inherit 64-bit configs
  $(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)
  
--- 
-2.53.0
-

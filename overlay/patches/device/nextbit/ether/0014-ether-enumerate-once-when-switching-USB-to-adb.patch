@@ -44,6 +44,3 @@ index 79bab9a..ebbbaef 100644
  
  # MTP
  on property:sys.usb.config=mtp
--- 
-2.53.0
-

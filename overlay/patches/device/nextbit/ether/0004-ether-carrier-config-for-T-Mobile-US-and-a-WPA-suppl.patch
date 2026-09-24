@@ -108,6 +108,3 @@ index d6ae451..902c6a1 100644
 +#
 +# Cost: no WPA3-SAE, which requires PMF. This driver cannot do WPA3 anyway.
 +pmf=0
--- 
-2.53.0
-

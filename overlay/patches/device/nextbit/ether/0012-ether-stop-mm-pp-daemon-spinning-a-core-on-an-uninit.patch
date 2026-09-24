@@ -37,7 +37,7 @@ so our poll() wins. Attached to libdisp-aba.so, the daemon's first DT_NEEDED ent
  create mode 100644 libshims/ppd_poll/ppd_poll.c
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index df96d20..9b4befd 100644
+index bf19119..61eec0d 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
 @@ -161,7 +161,8 @@ BOARD_SEPOLICY_DIRS += \
@@ -51,7 +51,7 @@ index df96d20..9b4befd 100644
  # WiFi
  BOARD_HAS_QCOM_WLAN              := true
 diff --git a/device.mk b/device.mk
-index 123675f..16da8fa 100644
+index ec57fd6..6560c74 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -171,7 +171,8 @@ PRODUCT_PACKAGES += \
@@ -230,6 +230,3 @@ index e21080b..fbad491 100644
  
  service energy-awareness /vendor/bin/energy-awareness
      class main
--- 
-2.53.0
-

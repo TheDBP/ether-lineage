@@ -11,7 +11,6 @@ AOSP has no default for Settings.System.FONT_SCALE: every reader passes 1.0f and
 database, so there is no resource to overlay and no way to ship a different starting point without
 this. Read it through loadFractionSetting with base 1, so the value lives in the device overlay
 (def_font_scale, 115%) and this carries no device-specific number.
-
 ---
  .../src/com/android/providers/settings/DatabaseHelper.java | 7 +++++++
  1 file changed, 7 insertions(+)

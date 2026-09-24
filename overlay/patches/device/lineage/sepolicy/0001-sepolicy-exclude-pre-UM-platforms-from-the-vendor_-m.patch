@@ -59,6 +59,3 @@ index 9ad4674..5ee967a 100644
  BOARD_SEPOLICY_M4DEFS += \
      display_vendor_data_file=vendor_display_vendor_data_file \
      hal_keymaster_qti_exec=vendor_hal_keymaster_qti_exec \
--- 
-2.53.0
-

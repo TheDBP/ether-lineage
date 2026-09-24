@@ -66,6 +66,3 @@ index 10023e3dd9..bdcc5cc28d 100644
  
      // We only need to synchronize the last read. Make BD_ADDR to be the last one.
      std::promise<void> promise;
--- 
-2.53.0
-

@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
 Date: Sat, 12 Sep 2026 14:01:00 -0400
-Subject: [PATCH] ether: default wallpaper via ro.config.wallpaper, OEM pack overrides
- it
+Subject: [PATCH] ether: default wallpaper via ro.config.wallpaper, OEM pack
+ overrides it
 
 WallpaperManager.openDefaultWallpaper() reads ro.config.wallpaper -- a file path --
 before falling back to the framework default_wallpaper drawable. Setting the property
@@ -21,7 +21,7 @@ device's decision; knowing the manufacturer's filename is not.
  1 file changed, 36 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index d9f019d..4cb7f11 100644
+index 8b68483..9aef774 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -305,6 +305,42 @@ PRODUCT_COPY_FILES += \

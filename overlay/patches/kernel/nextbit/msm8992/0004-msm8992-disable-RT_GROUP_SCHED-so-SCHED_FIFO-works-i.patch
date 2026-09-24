@@ -49,6 +49,3 @@ index 0201c01bed0..1e6c7e4e8e7 100644
  CONFIG_SCHED_HMP=y
  CONFIG_NAMESPACES=y
  # CONFIG_UTS_NS is not set
--- 
-2.53.0
-

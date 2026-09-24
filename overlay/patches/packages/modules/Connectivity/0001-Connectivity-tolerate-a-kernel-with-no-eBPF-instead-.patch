@@ -115,6 +115,3 @@ index 5ee04d1a5..0c8d71c79 100644
      // The limit on the number of stats entries a uid can have in the per uid stats map. BpfHandler
      // will block that specific uid from tagging new sockets after the limit is reached.
      const uint32_t mPerUidStatsEntriesLimit;
--- 
-2.53.0
-

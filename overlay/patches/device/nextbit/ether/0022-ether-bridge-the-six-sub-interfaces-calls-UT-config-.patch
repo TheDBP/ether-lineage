@@ -684,10 +684,10 @@ index 0000000..2dfaf20
 +    }
 +}
 diff --git a/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java b/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
-index 289b1c7..164e0cc 100644
+index 9105c01..9eab6c1 100644
 --- a/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
 +++ b/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
-@@ -185,31 +185,76 @@ public class LegacyMMTelFeature extends MMTelFeature {
+@@ -212,31 +212,76 @@ public class LegacyMMTelFeature extends MMTelFeature {
      @Override
      public IImsCallSession createCallSession(int sessionId, ImsCallProfile profile,
              IImsCallSessionListener listener) {

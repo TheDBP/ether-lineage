@@ -33,7 +33,7 @@ in the lookup order and never gets called.
  create mode 100644 libshims/camera_mutex/camera_mutex.c
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index 9b4befd..ac5cece 100644
+index 61eec0d..aac9a3a 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
 @@ -162,7 +162,8 @@ TARGET_LD_SHIM_LIBS := \
@@ -47,7 +47,7 @@ index 9b4befd..ac5cece 100644
  # WiFi
  BOARD_HAS_QCOM_WLAN              := true
 diff --git a/device.mk b/device.mk
-index 16da8fa..72db3a1 100644
+index 6560c74..7d47f14 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -172,7 +172,8 @@ PRODUCT_PACKAGES += \
@@ -151,6 +151,3 @@ index 0000000..562af46
 +
 +    return 0;
 +}
--- 
-2.53.0
-

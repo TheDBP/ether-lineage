@@ -29,12 +29,12 @@ than an A53 at 960, while stock steps up at 20%; stock's ladder restored. The A5
  configs/thermal-engine-8992.conf | 20 ++++----
  rootdir/bin/init.nbq.power.sh    | 84 +++++++++++++++++++++++++++-----
  rootdir/fstab.qcom               | 17 ++++++-
- rootdir/init.qcom.rc             | 41 ++++++++++++++--
+ rootdir/init.qcom.rc             | 25 ++++++++++
  sepolicy/genfs_contexts          |  1 +
  sepolicy/perfd.te                |  8 +++
  sepolicy/proc_swappiness.te      | 13 +++++
  system.prop                      |  3 +-
- 8 files changed, 158 insertions(+), 29 deletions(-)
+ 8 files changed, 147 insertions(+), 24 deletions(-)
  create mode 100644 sepolicy/proc_swappiness.te
 
 diff --git a/configs/thermal-engine-8992.conf b/configs/thermal-engine-8992.conf
@@ -266,7 +266,7 @@ index b81bb07..6d5ecf1 100644
 +# headroom so heavy sustained load degrades gracefully instead of wedging system_server.
 +/dev/block/zram0                                           none               swap    defaults                                        zramsize=805306368
 diff --git a/rootdir/init.qcom.rc b/rootdir/init.qcom.rc
-index 633bfb6..6126513 100644
+index 633bfb6..ceba47e 100644
 --- a/rootdir/init.qcom.rc
 +++ b/rootdir/init.qcom.rc
 @@ -115,6 +115,31 @@ on boot
@@ -357,6 +357,3 @@ index 8ff8318..203818b 100644
  ro.core_ctl_max_cpu=2
  
  # RIL
--- 
-2.53.0
-

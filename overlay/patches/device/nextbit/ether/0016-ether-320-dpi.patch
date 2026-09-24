@@ -20,7 +20,7 @@ pin, 320 would silently drop recovery to xhdpi artwork; the panel itself has not
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index aac9a3a..ac5cece 100644
+index aac9a3a..d01d91a 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
 @@ -81,7 +81,8 @@ TARGET_VNDK_USE_CORE_VARIANT := true

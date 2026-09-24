@@ -50,6 +50,3 @@ index 267e62c67..fe6aa8d59 100644
      auto uid_path = ConvertUidToPath(cgroup.c_str(), uid);
  
      struct stat cgroup_stat;
--- 
-2.53.0
-

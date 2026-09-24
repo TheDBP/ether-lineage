@@ -61,6 +61,3 @@ index 4a01d8176d..d18d1c751f 100644
      status_t result = NO_ERROR;
      if (ioctl(mDriverFD, BINDER_SET_MAX_THREADS, &maxThreads) != -1) {
          mMaxThreads = maxThreads;
--- 
-2.53.0
-

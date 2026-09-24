@@ -13,7 +13,6 @@ ims_rtp_daemon. IMS registration itself succeeds -- it is the media path that is
 
 Mirrors the ungated 'T-Mobile US IMS' row, gated to Mint's gid the same way Mint's existing data row
 is, so the other MVNOs sharing 310240 are unaffected.
-
 ---
  US.xml | 14 ++++++++++++++
  1 file changed, 14 insertions(+)

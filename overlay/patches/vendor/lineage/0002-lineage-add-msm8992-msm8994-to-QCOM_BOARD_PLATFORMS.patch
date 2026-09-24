@@ -43,6 +43,3 @@ index 33b6ecb5..4f49c819 100644
  # UM Family
  QCOM_BOARD_PLATFORMS += msm8937
  QCOM_BOARD_PLATFORMS += msm8953
--- 
-2.53.0
-

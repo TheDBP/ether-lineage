@@ -41,6 +41,3 @@ index 57ceb5c..9316e9c 100644
  
  static void process_interaction_hint(void* data) {
      static struct timespec s_previous_boost_timespec;
--- 
-2.53.0
-

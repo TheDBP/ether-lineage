@@ -523,6 +523,3 @@ index 0000000..d630603
 +allow robinled_app sysfs_leds:dir search;
 +allow robinled_app sysfs_leds:lnk_file read;
 +allow robinled_app sysfs_leds:file rw_file_perms;
--- 
-2.53.0
-

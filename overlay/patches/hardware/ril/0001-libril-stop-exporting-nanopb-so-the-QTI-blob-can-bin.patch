@@ -24,7 +24,6 @@ build time with the modern generator, so libril needs the modern runtime for its
 by keeping the nanopb version AOSP uses and hiding it from the dynamic symbol table, which leaves the
 blob free to bind to a 0.2.8 copy shipped alongside. Static linkage means libril's SAP path is
 unaffected by the visibility change.
-
 ---
  libril/Android.mk     | 10 ++++++++++
  libril/libril.map.txt | 13 +++++++++++++

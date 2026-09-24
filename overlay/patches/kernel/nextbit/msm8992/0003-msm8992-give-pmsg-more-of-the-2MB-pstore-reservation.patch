@@ -34,6 +34,3 @@ index ee6ba51000c..7e35b345985 100644
  		android,ramoops-dump-oops = <0x1>;
  	};
  };
--- 
-2.53.0
-

@@ -45,6 +45,3 @@ index 4c2a268d..f4f5b59a 100644
  
      ifeq ($(KERNEL_ARCH),arm64)
          # Add 32-bit GCC to PATH so that arm-linux-androidkernel-as is available for CONFIG_COMPAT_VDSO
--- 
-2.53.0
-

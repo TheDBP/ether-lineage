@@ -67,6 +67,3 @@ index e4337d19361..2fa7f968073 100644
  #define TZ_RESET_ID		0x3
  #define TZ_UPDATE_ID		0x4
  #define TZ_INIT_ID		0x6
--- 
-2.53.0
-

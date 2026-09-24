@@ -60,7 +60,7 @@ which it never has on this branch.
  create mode 100644 sepolicy/modem_hold.te
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index 5fd443e..df96d20 100644
+index 5593a0f..bf19119 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
 @@ -160,6 +160,7 @@ BOARD_SEPOLICY_DIRS += \
@@ -72,7 +72,7 @@ index 5fd443e..df96d20 100644
  
  # WiFi
 diff --git a/device.mk b/device.mk
-index d0d4455..123675f 100644
+index 9aef774..ec57fd6 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -41,6 +41,8 @@ PRODUCT_PACKAGES += \
@@ -329,6 +329,3 @@ index 0000000..d49b39b
 +
 +# Opening this is subsystem_get("modem"); holding it keeps the modem online.
 +allow modem_hold ssr_device:chr_file r_file_perms;
--- 
-2.53.0
-

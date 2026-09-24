@@ -20,14 +20,14 @@ which meant a Google-free build could not have Firefox at all. Its module carrie
 LOCAL_OVERRIDES_PACKAGES := Jelly, so exactly one browser is ever installed and
 nothing needs to declare a default browser.
 ---
- device.mk                                     | 31 +++++++++++++++++++++++++++++++
- fdroid/.gitignore                             |  6 ++++++
- fdroid/Android.mk                             |  4 ++++
- fdroid/FDroid/Android.mk                      | 34 ++++++++++++++++++++++++++++++++++
- fdroid/FDroidPrivilegedExtension/Android.mk   | 37 +++++++++++++++++++++++++++++++++++++
- ...rmissions-org.fdroid.fdroid.privileged.xml |  9 +++++++++
- firefox/.gitignore                            |  3 +++
- firefox/Android.mk                            | 30 ++++++++++++++++++++++++++++++
+ device.mk                                     | 31 ++++++++++++++++
+ fdroid/.gitignore                             |  6 +++
+ fdroid/Android.mk                             |  4 ++
+ fdroid/FDroid/Android.mk                      | 34 +++++++++++++++++
+ fdroid/FDroidPrivilegedExtension/Android.mk   | 37 +++++++++++++++++++
+ ...rmissions-org.fdroid.fdroid.privileged.xml |  9 +++++
+ firefox/.gitignore                            |  3 ++
+ firefox/Android.mk                            | 30 +++++++++++++++
  8 files changed, 154 insertions(+)
  create mode 100644 fdroid/.gitignore
  create mode 100644 fdroid/Android.mk
@@ -38,7 +38,7 @@ nothing needs to declare a default browser.
  create mode 100644 firefox/Android.mk
 
 diff --git a/device.mk b/device.mk
-index b70be41..d9f019d 100644
+index b70be41..8b68483 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -284,6 +284,27 @@ PRODUCT_PACKAGES += \
@@ -251,6 +251,3 @@ index 0000000..f71de7f
 +LOCAL_OVERRIDES_PACKAGES := Jelly
 +include $(BUILD_PREBUILT)
 +endif
--- 
-2.53.0
-

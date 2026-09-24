@@ -2,9 +2,6 @@ From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
 Date: Sat, 12 Sep 2026 14:01:00 -0400
 Subject: [PATCH] ether: QS tile layout and RobinLed listener access
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
 Two device-level resource overlays:
 
@@ -27,12 +24,12 @@ The DeskClock `widget_max_clock_font_size` override is dropped as dead. It sizes
 clock widget, and no preset has one: minimal-home strips every appwidget from the default workspace,
 and on a GApps build GoogleClock overrides DeskClock so the overlay is not compiled in at all.
 ---
- .../base/core/res/res/values/config.xml       |  8 +++++
+ .../base/core/res/res/values/config.xml       |  5 ++++
  .../packages/SystemUI/res/values/config.xml   | 29 ++++---------------
- 2 files changed, 14 insertions(+), 23 deletions(-)
+ 2 files changed, 11 insertions(+), 23 deletions(-)
 
 diff --git a/overlay/frameworks/base/core/res/res/values/config.xml b/overlay/frameworks/base/core/res/res/values/config.xml
-index d35c036..21a08f6 100644
+index d35c036..b58855e 100644
 --- a/overlay/frameworks/base/core/res/res/values/config.xml
 +++ b/overlay/frameworks/base/core/res/res/values/config.xml
 @@ -276,4 +276,9 @@
@@ -82,6 +79,3 @@ index 74df52f..b3f3dcb 100644
 +    </string>
  </resources>
 -
--- 
-2.53.0
-

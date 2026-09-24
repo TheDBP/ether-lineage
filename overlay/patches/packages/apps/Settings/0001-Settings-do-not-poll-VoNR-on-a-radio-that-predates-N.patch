@@ -18,7 +18,6 @@ mHas5gCapability logged false on this device.
 Guard both the registration and isChecked(). This only affects devices with no NR in their
 supported radio access family, where the preference was already unavailable, so nothing that could
 work is turned off.
-
 ---
  .../NrAdvancedCallingPreferenceController.java     | 14 ++++++++++++++
  1 file changed, 14 insertions(+)

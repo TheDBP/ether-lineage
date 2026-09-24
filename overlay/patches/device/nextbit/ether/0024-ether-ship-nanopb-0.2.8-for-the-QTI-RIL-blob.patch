@@ -39,10 +39,10 @@ so the version is pinned to what this device's own stock ROM was built with.
  create mode 100644 nanopb-0.2.8/pb_encode.h
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index ac5cece..c4165d8 100644
+index d01d91a..369c9e2 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
-@@ -165,6 +165,14 @@ TARGET_LD_SHIM_LIBS := \
+@@ -166,6 +166,14 @@ TARGET_LD_SHIM_LIBS := \
      /system/vendor/lib64/libdisp-aba.so|libshims_ppd_poll.so \
      /system/vendor/lib/libmmcamera2_isp_modules.so|libshims_camera_mutex.so
  

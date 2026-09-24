@@ -32,6 +32,3 @@ index 0d92cd8..2a0f9c2 100644
 +    # reboot_on_failure reboot,bpfloader-failed
      # we're not really updatable, but want to be able to load bpf programs shipped in apexes
      updatable
--- 
-2.53.0
-

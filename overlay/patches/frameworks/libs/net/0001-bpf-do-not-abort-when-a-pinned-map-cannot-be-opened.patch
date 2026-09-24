@@ -58,6 +58,3 @@ index 2bee2ee4..1f707fe6 100644
          if (isAtLeastKernelVersion(4, 14, 0)) {
              if (bpfGetFdKeySize(mMapFd) != sizeof(Key)) abort();
              if (bpfGetFdValueSize(mMapFd) != sizeof(Value)) abort();
--- 
-2.53.0
-

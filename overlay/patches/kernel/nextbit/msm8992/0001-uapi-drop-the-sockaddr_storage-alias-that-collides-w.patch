@@ -56,6 +56,3 @@ index 359c82ac38f..b42153b4cbc 100644
 + */
  
  #endif /* _UAPI_LINUX_SOCKET_H */
--- 
-2.53.0
-

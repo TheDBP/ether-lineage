@@ -76,6 +76,3 @@ index 79e10ca9..fcfd66a3 100644
      MSM_VIDC_TARGET_LIST := $(UM_3_18_FAMILY)
      QCOM_HARDWARE_VARIANT := msm8996
  else ifneq ($(filter $(UM_4_9_LEGACY_FAMILY),$(TARGET_BOARD_PLATFORM)),)
--- 
-2.53.0
-

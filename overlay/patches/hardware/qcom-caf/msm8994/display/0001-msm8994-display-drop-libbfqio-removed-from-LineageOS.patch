@@ -57,6 +57,3 @@ index 275ff371e5..ea3f672d3b 100644
  
      char vdata[MAX_DATA];
      //Number of physical displays
--- 
-2.53.0
-

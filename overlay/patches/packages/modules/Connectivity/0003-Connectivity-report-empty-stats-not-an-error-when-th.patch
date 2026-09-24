@@ -90,6 +90,3 @@ index 9ebef4d6d..26ab8067b 100644
          ALOGE("get ifaceIndexName map fd failed: %s", strerror(errno));
          return ret;
      }
--- 
-2.53.0
-

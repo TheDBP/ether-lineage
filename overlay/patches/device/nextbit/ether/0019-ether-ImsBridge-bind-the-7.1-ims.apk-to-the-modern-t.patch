@@ -31,26 +31,26 @@ rather than returning null, which would defer the failure somewhere unrelated. T
 apiece and their .aidl filled in with real method order first.
 ---
  ims-bridge/Android.bp                         |  32 +++
- ims-bridge/AndroidManifest.xml                |  31 +++
+ ims-bridge/AndroidManifest.xml                |  40 +++
  .../codeaurora/ims/legacy/ImsCallProfile.aidl |   3 +
  .../codeaurora/ims/legacy/ImsReasonInfo.aidl  |   3 +
  .../ims/legacy/ImsStreamMediaProfile.aidl     |   3 +
- .../ims/legacy/internal/IImsCallSession.aidl  |  13 ++
- .../internal/IImsCallSessionListener.aidl     |  13 ++
- .../ims/legacy/internal/IImsConfig.aidl       |  13 ++
- .../ims/legacy/internal/IImsEcbm.aidl         |  13 ++
- .../legacy/internal/IImsMultiEndpoint.aidl    |  13 ++
+ .../ims/legacy/internal/IImsCallSession.aidl  |  13 +
+ .../internal/IImsCallSessionListener.aidl     |  13 +
+ .../ims/legacy/internal/IImsConfig.aidl       |  13 +
+ .../ims/legacy/internal/IImsEcbm.aidl         |  13 +
+ .../legacy/internal/IImsMultiEndpoint.aidl    |  13 +
  .../internal/IImsRegistrationListener.aidl    |  24 ++
  .../ims/legacy/internal/IImsService.aidl      |  45 ++++
- .../ims/legacy/internal/IImsUt.aidl           |  13 ++
+ .../ims/legacy/internal/IImsUt.aidl           |  13 +
  .../codeaurora/ims/legacy/ImsCallProfile.java |  59 +++++
  .../codeaurora/ims/legacy/ImsReasonInfo.java  |  49 ++++
- .../ims/legacy/ImsStreamMediaProfile.java     |  41 ++++
+ .../ims/legacy/ImsStreamMediaProfile.java     |  41 +++
  .../src/org/lineageos/ims/bridge/Convert.java |  61 +++++
  .../ims/bridge/ImsBridgeService.java          |  31 +++
- .../ims/bridge/LegacyMMTelFeature.java        | 215 ++++++++++++++++++
- .../bridge/RegistrationListenerAdapter.java   |  82 +++++++
- 20 files changed, 757 insertions(+)
+ .../ims/bridge/LegacyMMTelFeature.java        | 242 ++++++++++++++++++
+ .../bridge/RegistrationListenerAdapter.java   |  84 ++++++
+ 20 files changed, 795 insertions(+)
  create mode 100644 ims-bridge/Android.bp
  create mode 100644 ims-bridge/AndroidManifest.xml
  create mode 100644 ims-bridge/aidl/org/codeaurora/ims/legacy/ImsCallProfile.aidl
@@ -112,7 +112,7 @@ index 0000000..cb192b9
 +}
 diff --git a/ims-bridge/AndroidManifest.xml b/ims-bridge/AndroidManifest.xml
 new file mode 100644
-index 0000000..2bef624
+index 0000000..ba13a60
 --- /dev/null
 +++ b/ims-bridge/AndroidManifest.xml
 @@ -0,0 +1,40 @@
@@ -651,7 +651,7 @@ index 0000000..cc61a6a
 +}
 diff --git a/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java b/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
 new file mode 100644
-index 0000000..289b1c7
+index 0000000..9105c01
 --- /dev/null
 +++ b/ims-bridge/src/org/lineageos/ims/bridge/LegacyMMTelFeature.java
 @@ -0,0 +1,242 @@
@@ -899,7 +899,7 @@ index 0000000..289b1c7
 +}
 diff --git a/ims-bridge/src/org/lineageos/ims/bridge/RegistrationListenerAdapter.java b/ims-bridge/src/org/lineageos/ims/bridge/RegistrationListenerAdapter.java
 new file mode 100644
-index 0000000..ce40146
+index 0000000..4cab0e2
 --- /dev/null
 +++ b/ims-bridge/src/org/lineageos/ims/bridge/RegistrationListenerAdapter.java
 @@ -0,0 +1,84 @@

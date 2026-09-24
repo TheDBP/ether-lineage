@@ -64,6 +64,3 @@ index 0e81d4e5..8067638b 100644
      }
  
      if (libnetd_updatable_init(cg2_path.c_str())) {
--- 
-2.53.0
-
