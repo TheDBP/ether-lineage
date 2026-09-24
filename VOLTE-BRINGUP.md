@@ -3,9 +3,10 @@
 How a 2016 phone whose IMS stack shipped for Android 7.1.1 ended up placing VoLTE calls on
 Android 13, what each piece does, and — at least as usefully — every wrong turn on the way.
 
-Status as of 2026-09-24: **outgoing calls connect over IMS with the HD indicator and two-way
-audio.** Wi-Fi calling is available at the platform level but its registration is untested. Video
-calling is deliberately off and cannot be revived.
+Status as of 2026-09-24: **VoLTE works, outgoing and incoming, with two-way audio on both and the
+HD indicator.** Calls end with `CODE_USER_TERMINATED` and a `REMOTE`/`LOCAL` disconnect cause, i.e.
+somebody hung up, rather than an error. Wi-Fi calling is available at the platform level but its
+registration is untested. Video calling is deliberately off and cannot be revived.
 
 `VOLTE.md` is the chronological working log this is distilled from; it has the raw measurements.
 The generic, device-independent lessons live in `forge/docs/debugging-volte.md`.
@@ -228,6 +229,22 @@ the MMTel side logged `registrationDisconnected` four times in the same session.
 and the `ImsQmiIF.Registration` unsol are different signals and they disagree. The one the call path
 follows is the unsol.
 
+**The incoming-call path deadlocks the main thread, and it is the compat layer's fault.**
+`ImsPhoneCallTracker.onIncomingCall` defaults to `executeAndWait()`, which is
+`CompletableFuture.runAsync(task, mExecutor).join()`, and the production constructor injects
+`phone.getContext().getMainExecutor()`. A modern ImsService calls `onIncomingCall` on a **binder**
+thread, where blocking costs nothing -- hence the property name
+`ro.telephony.block_binder_thread_on_incoming_calls`. The pre-P compat layer instead delivers it
+from `MmTelFeatureCompatAdapter`'s `ACTION_IMS_INCOMING_CALL` broadcast receiver, which runs on the
+**main** thread, so `join()` waits for a task only the waiting thread can run.
+
+Everything else is downstream, and none of it looks like the cause. `PhoneInterfaceManager.sendRequest`
+posts to the main thread and waits with no timeout, so *every* unrelated telephony call hangs: that
+is why Settings ANRed on `isVoNrEnabled`, and why binder threads pile up on `MainThreadRequest`
+monitors. Eventually `TelephonyConnectionService` cannot execute, the phone process is killed for
+ANR, and the next call fails with `Phone is null, OUT_OF_SERVICE` -- with IMS never re-registering.
+Set the property false (device patch 0029). AOSP's else-branch comment names the case exactly: "for
+legacy IMS we want to avoid blocking the binder thread".
 **`sys.ims.*` is typed `qcom_ims_prop`** and unreadable from a shell without root. Empty is not the
 same as unset.
 
@@ -299,6 +316,7 @@ Relevant patches:
 | device 0025 | nanopb 0.2.8 |
 | device 0026 | **`config_device_volte_available` under the SIM's MNC** |
 | device 0027 | Surface shim; video calling off |
+| device 0029 | **`block_binder_thread_on_incoming_calls=false`** -- without it, incoming calls deadlock `com.android.phone` |
 | `hardware/ril` 0001 | stop libril exporting nanopb |
 | `vendor/apn` 0001 | the missing IMS APN for 310240 |
 
