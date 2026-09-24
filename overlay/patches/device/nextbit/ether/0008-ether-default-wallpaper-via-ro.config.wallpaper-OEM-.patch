@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
 Date: Sat, 12 Sep 2026 14:01:00 -0400
-Subject: ether: default wallpaper via ro.config.wallpaper, OEM pack overrides
+Subject: [PATCH] ether: default wallpaper via ro.config.wallpaper, OEM pack overrides
  it
 
 WallpaperManager.openDefaultWallpaper() reads ro.config.wallpaper -- a file path --

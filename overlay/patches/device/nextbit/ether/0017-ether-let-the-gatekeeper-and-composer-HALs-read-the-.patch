@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
 Date: Tue, 15 Sep 2026 22:05:38 -0400
-Subject: [PATCH 2/2] ether: let the gatekeeper and composer HALs read the
+Subject: [PATCH] ether: let the gatekeeper and composer HALs read the
  properties they poll
 
 gatekeeper reads a system_prop during startup; denied, it never registers IGatekeeper/default and

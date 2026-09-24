@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
 Date: Mon, 14 Sep 2026 04:57:11 -0400
-Subject: [PATCH] hwui: never block a binder thread on the RenderThread's draw
- lock
+Subject: [PATCH] hwui: never block a binder thread on the RenderThread's
+ draw lock
 
 The launcher and SystemUI freeze for exactly 4 s, then everything queued
 during the freeze lands at once. A trace with binder driver events and
@@ -114,6 +114,3 @@ index d85e579e371c..e84aa600ecec 100644
      std::set<RenderNode*> mPrefetchedLayers;
  
      // Stores the bounds of the main content.
--- 
-2.53.0
-
