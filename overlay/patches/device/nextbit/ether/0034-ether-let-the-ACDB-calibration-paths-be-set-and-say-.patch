@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Thu, 24 Sep 2026 22:04:03 -0400
+Subject: [PATCH] ether: let the ACDB calibration paths be set, and say where
+ WFC provisioning lives
+
+vendor_init is refused audio_prop, so the seven persist.audio.calfile* paths init.qcom.rc sets from
+this device's own ACDB data all read back empty and the audio HAL has been running on generic
+calibration since the port began:
+
+    avc: denied { set } for property=persist.audio.calfile0 scontext=u:r:vendor_init:s0
+                                                            tcontext=u:object_r:audio_prop:s0
+
+AOSP folded the exported_audio_prop type vendor_init used to hold back into audio_prop, so vendor rc
+files written against the old world stopped working silently. public/vendor_init.te already grants
+vendor_init a long list of other core property types and there is no neverallow against this one.
+
+Found by sweeping property *set* denials, which name the property where read denials do not.
+
+The carrier config gains only a comment. Wi-Fi calling needs IMS provisioning required for VOICE
+over IWLAN, and that cannot be expressed here: it needs a nested <pbundle_as_map>, and this file is
+parsed by PersistableBundle.restoreFromXml() with throwException=false, so a nested bundle it cannot
+handle is dropped in silence. The XML compiles into the APK correctly, verified with aapt2, and
+simply never reaches the merged config while every scalar around it applies. The setting lives in
+frameworks/base as the default for Ims.KEY_MMTEL_REQUIRES_PROVISIONING_BUNDLE; the comment says so,
+so the next reader does not add it back here.
+---
+ .../packages/apps/CarrierConfig/res/xml/vendor.xml    | 11 +++++++++++
+ sepolicy/vendor_init.te                               | 11 +++++++++++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml b/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
+index cc1f91b..46a5504 100644
+--- a/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
++++ b/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
+@@ -20,5 +20,16 @@
+         <boolean name="carrier_volte_override_wfc_provisioning_bool" value="true" />
+         <int name="carrier_default_wfc_ims_mode_int" value="1" />
+         <int name="carrier_default_wfc_ims_roaming_mode_int" value="1" />
++
++        <!-- Wi-Fi calling needs IMS provisioning required for VOICE over IWLAN, or the modem is
++             never told the feature is provisioned and declines every attempt to configure it. That
++             is NOT set here, deliberately: it needs a nested <pbundle_as_map>, and this file is
++             parsed by PersistableBundle.restoreFromXml() with throwException=false, so a nested
++             bundle it cannot handle is dropped in silence. The XML compiles into the APK correctly
++             and simply never reaches the merged config; every scalar around it applies, which
++             makes it look like it worked.
++
++             It lives in frameworks/base instead, as the default for
++             Ims.KEY_MMTEL_REQUIRES_PROVISIONING_BUNDLE. See that patch. -->
+     </carrier_config>
+ </carrier_config_list>
+diff --git a/sepolicy/vendor_init.te b/sepolicy/vendor_init.te
+index 57d9d14..ec22c3b 100644
+--- a/sepolicy/vendor_init.te
++++ b/sepolicy/vendor_init.te
+@@ -15,3 +15,14 @@ allow vendor_init radio_data_file:file create_file_perms;
+ 
+ # copy_complete under the radio core data dir
+ allow vendor_init radio_core_data_file:file create_file_perms;
++
++# init.qcom.rc sets persist.audio.calfile0..6 to this device's own ACDB calibration
++# (NBQ_Speaker_cal.acdb, NBQ_Handset_cal.acdb, NBQ_Headset_cal.acdb and four more) and every one is
++# refused, so all seven read back empty and the audio HAL has been running on generic calibration:
++#   avc: denied { set } for property=persist.audio.calfile0 scontext=u:r:vendor_init:s0
++#                                                           tcontext=u:object_r:audio_prop:s0
++# AOSP used to grant vendor_init the separate exported_audio_prop type and folded it back into
++# audio_prop, which silently broke vendor rc files written against the old world. public/vendor_init.te
++# already grants vendor_init a long list of other core property types, and there is no neverallow
++# against this one.
++set_prop(vendor_init, audio_prop)

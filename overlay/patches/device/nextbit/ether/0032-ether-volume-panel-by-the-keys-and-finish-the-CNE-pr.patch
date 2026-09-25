@@ -1,13 +1,13 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Thu, 24 Sep 2026 18:38:59 -0400
+Date: Thu, 24 Sep 2026 22:03:45 -0400
 Subject: [PATCH] ether: volume panel by the keys, and finish the CNE property
  access
 
-Three things, all small.
+Three things.
 
 sepolicy: CNEService reads the same properties cnd does, and giving persist.cne.* and
-persist.vendor.cnd.* their own type in 0031 moved them out of its reach as well --
+persist.vendor.cnd.* their own type moved them out of its reach as well --
 
     avc: denied { read } comm=".dataservices" scontext=u:r:dataservice_app:s0
                          tcontext=u:object_r:vendor_cne_prop:s0
@@ -17,23 +17,19 @@ type. The app is hosted in the .dataservices process, which is why it does not s
 ps and is easy to believe dead.
 
 persist.vendor.cnd.iwlan: CNE's own IWLAN switch, read by libcne, unset by this port and by stock.
-Worth setting only now that 0031 lets CNE read that property space -- the measured effect of 0031
-was "pref data tech UNKNOWN" becoming "pref data tech LTE", so CNE is answering; IWLAN is still not
-among the candidates it prepares, and this is the switch named for it. persist.vendor.cnd.wqe is
-the other one libcne reads and is deliberately left alone, so a change in the candidate list has a
-single cause.
+Worth setting only now that CNE can read that property space at all.
 
 Volume panel: put it on the left, where this device's volume keys are, and raise it to meet them.
-The rocker sits at about 31% of screen height, not the middle -- fitting a homography from a photo
-to screen coordinates puts the two keys at y 505 and y 694 of 1920, midpoint 600, against the
-panel's own centre of 961. Hence -180dp. def_volume_panel_on_left is a first-boot default only;
-Settings > System > Buttons > "Show panel on left" still wins for anyone who changes it.
+The rocker sits at about 34% of screen height rather than the middle. -180dp was the first fit, from
+a homography onto a photo of the device; -150dp is the measured correction, taken from a photo with
+the panel and the keys in the same frame, which removes the fit error. def_volume_panel_on_left is a
+first-boot default only; Settings > System > Buttons still wins for anyone who changes it.
 ---
- device.mk                                             | 11 +++++++++++
- .../base/packages/SystemUI/res/values/dimens.xml      | 11 +++++++++++
- .../LineageSettingsProvider/res/values/defaults.xml   |  7 +++++++
- sepolicy/cnd.te                                       |  9 +++++++++
- 4 files changed, 38 insertions(+)
+ device.mk                                          | 11 +++++++++++
+ .../base/packages/SystemUI/res/values/dimens.xml   | 14 ++++++++++++++
+ .../res/values/defaults.xml                        |  7 +++++++
+ sepolicy/cnd.te                                    |  9 +++++++++
+ 4 files changed, 41 insertions(+)
  create mode 100644 overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
  create mode 100644 overlay/lineage-sdk/packages/LineageSettingsProvider/res/values/defaults.xml
 
@@ -61,20 +57,23 @@ index b38fb03..617af76 100644
  PRODUCT_PACKAGES += libnanopb_legacy
 diff --git a/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml b/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
 new file mode 100644
-index 0000000..01e386d
+index 0000000..89a616c
 --- /dev/null
 +++ b/overlay/frameworks/base/packages/SystemUI/res/values/dimens.xml
-@@ -0,0 +1,11 @@
+@@ -0,0 +1,14 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<resources>
 +    <!-- The Robin's volume rocker is at roughly 31% of the screen's height, not the middle, so the
 +         stock centred panel sits well below the keys being pressed. Measured by fitting a
 +         homography from a photo of the device to screen coordinates using four on-screen landmarks:
 +         the two buttons come out at y 505 and y 694 of 1920, midpoint 600. The panel's own centre
-+         is 961 (it spans 607..1315), so it wants to come up 361px, which is 180dp at this density.
-+         An independent check point held back from the fit landed 2.4% of screen height out, which
-+         is the accuracy to expect here. -->
-+    <dimen name="volume_dialog_offset_y">-180dp</dimen>
++         is 961 (it spans 607..1315).
++
++         -180dp was the first fit and overshot. Re-measured against a photo of the panel and the
++         keys in the same frame, which is a far better comparison than fitting the keys alone: the
++         panel came out 65 photo-px high against a panel height of 795 photo-px for 708 device px,
++         so 58 device px = 29dp too far. The keys are at device y 659, about 34% of the screen. -->
++    <dimen name="volume_dialog_offset_y">-150dp</dimen>
 +</resources>
 diff --git a/overlay/lineage-sdk/packages/LineageSettingsProvider/res/values/defaults.xml b/overlay/lineage-sdk/packages/LineageSettingsProvider/res/values/defaults.xml
 new file mode 100644
