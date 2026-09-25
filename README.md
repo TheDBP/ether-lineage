@@ -283,7 +283,7 @@ work on any device rather than being wired into this tree.
 
 ## Device patches
 
-76 patches across 20 upstream projects, applied at build time from `overlay/patches/`. Nothing
+78 patches across 20 upstream projects, applied at build time from `overlay/patches/`. Nothing
 here is a fork: each is a single commit against the upstream tree, replayed on every build, so
 upstream stays upstream and what we changed stays legible. One patch per thing it enables. Each entry
 below: what broke → what the patch does → what it costs.
@@ -376,12 +376,92 @@ below: what broke → what the patch does → what it costs.
 - **0015 let wcnss_filter hold a wakelock** — `/sys/power/wake_lock` needs `CAP_BLOCK_SUSPEND`;
   sepolicy allowed it, the rc never asked. Every acquire failed EPERM (~1/s) and BT traffic could
   not keep the SoC awake. `capabilities BLOCK_SUSPEND` on the service.
-- **0016 420 dpi** — the 5.2" 1080p panel is 424 dpi; upstream's 480 rendered a size too large.
+- **0016 320 dpi** — the 5.2" 1080p panel is 424 dpi; upstream's 480 rendered a size too large.
   420 is the nearest bucket, xxhdpi assets still apply.
 - **0017 let the gatekeeper and composer HALs read the properties they poll** — gatekeeper reads a
   `system_prop` at startup; denied, `IGatekeeper/default` never registers and `system_server` waits
   forever (boot animation with no crash). The composer HAL polls the bootanim property; denied reads
   spin at hundreds per second for the whole hang.
+
+- **0018 IMS daemons, JNI symlinks and denial-derived sepolicy** — `init.target.rc` carries the four
+  IMS services from ether's own stock ramdisk with the two-stage property handshake they expect, plus
+  the sepolicy their denials asked for.
+- **0019 ImsBridge — bind the 7.1 `ims.apk` to the modern stack** — `ims.apk` implements
+  `com.android.ims.internal.IImsService`, the pre-P binding Android 9 deleted.
+  `frameworks/opt/telephony` still carries the compat path, so the bridge presents a modern
+  `ImsService` and delegates to the legacy one.
+- **0020 ship the rebuilt `ims.apk` and let ImsResolver find it** — three things that do not work
+  apart: the apk imported rather than copied (AOSP rejects APKs in `PRODUCT_COPY_FILES`), signed with
+  the platform key because it declares `sharedUserId=android.uid.phone`, and the resolver config that
+  points at the bridge.
+- **0021 generate the full 7.1 legacy AIDL surface, and verify it** — all fourteen legacy interfaces,
+  generated from the stock 7.1 binary rather than typed: `IImsCallSession` (28 methods),
+  `IImsCallSessionListener` (30), `IImsUt` (18), `IImsVideoCallProvider` (11) and the rest, with a
+  verifier so a hand-typed mistake cannot pass.
+- **0022 bridge the six sub-interfaces — calls, UT, config, ECBM, multi-endpoint, video** —
+  `CallSessionWrapper` delegates all 28 legacy call-session methods onto `ImsCallSessionImplBase`,
+  whose no-op defaults cover everything 13 added (RTT, transfer, call quality) that 7.1 has no notion
+  of.
+- **0023 stage the IMS blobs from the build, not from a remembered command** — `vendor/ims-blobs` used
+  to come from running `extract-ims-blobs.sh` by hand, and failed in the worst way: the directory sits
+  outside `vendor/extra` so the overlay clear never touches it, and a tree where it had run kept
+  producing ROMs with IMS while a fresh clone produced ROMs without and said nothing. The build now
+  stages it and refuses to continue if it cannot.
+- **0024 ship nanopb 0.2.8 for the QTI RIL blob** — `libril-qc-qmi-1.so` imports
+  `pb_encode`/`pb_decode` rather than carrying its own nanopb, and its descriptors were generated
+  against 0.2.8, the version 7.1.1 shipped. Modern nanopb inserted `PB_LTYPE_BOOL` and shifted every
+  other `PB_LTYPE_*`, so a newer copy decodes every field as the wrong type.
+- **0025 VoLTE resources under the SIM's MNC, not the network's** — Mint runs on T-Mobile but issues
+  its own SIMs, and Android picks resource `mcc`/`mnc` qualifiers from the SIM rather than the serving
+  network. `gsm.sim.operator.numeric` reads 310240, so resources filed under 310260 were never
+  selected.
+- **0026 load the VT natives, and switch video calling off** — `libimsmedia_jni.so` imports a
+  two-argument `android::Surface::Surface`; 13 has only the three-argument form, so the symbol resolves
+  nowhere and ImsMedia's static initialiser takes the process down. A shim lets `init()` build its
+  singletons; video calling itself is off, because 61 unresolved symbols against removed subsystems
+  are not shimmable.
+- **0027 `def_font_scale` 115% for the 320 dpi panel** — read by the SettingsProvider patch via
+  `loadFractionSetting`. 320 dpi buys 540 dp of width, which dense layouts need, at the cost of
+  physically small text on 5.2 inches.
+- **0028 do not block on incoming-call delivery (legacy IMS)** — `ImsPhoneCallTracker.onIncomingCall`
+  defaults to `executeAndWait()`, i.e. `CompletableFuture.runAsync(task, mExecutor).join()`, which
+  deadlocks against the legacy bridge's binder thread and loses the call.
+- **0029 switch the IWLAN transport on for Wi-Fi calling** — kept for the record rather than because it
+  works: the modem stores and acknowledges the configuration (`wifi_call: 2`) and never registers an
+  ePDG. Superseded by 0037, which turns the feature off; the full account is `VOLTE-BRINGUP.md` §8.
+- **0030 drive the flashlight through the flash subdev, not the PMIC** — the torch never emitted light
+  while every write succeeded and the tile reported on, because `QCameraFlash` was writing PMIC sysfs
+  nodes that nothing on this board is wired to. Three stacked faults; full account in `FLASHLIGHT.md`.
+- **0031 let the Connectivity Engine read its own configuration** — CNE tells the RIL which data
+  technology to prefer and is the only path by which IWLAN becomes a candidate at all. It could not
+  read one of its own `persist.cne.*` properties; the measured result was `pref data tech` moving from
+  `UNKNOWN` to `LTE`.
+- **0032 volume panel by the keys, and finish the CNE property work** — the volume dialog moves to the
+  left edge, offset −150 dp, so it appears beside the physical keys rather than centred; plus the
+  sepolicy `CNEService` needs for the properties `cnd` already reads.
+- **0033 label the properties fifteen denials were actually about** — fifteen avc denials on property
+  reads across ten domains. A denial names the domain and the type but never the property, so it read
+  as fifteen separate bugs; labelling the prefixes fixed them as one.
+- **0034 let the ACDB calibration paths be set, and say where they come from** — `vendor_init` was
+  refused `audio_prop`, so the seven `persist.audio.calfile*` paths `init.qcom.rc` sets from this
+  device's own ACDB data all read back empty, and the audio HAL had been running on generic
+  calibration since the port began.
+- **0035 VoLTE is a device capability, not a T-Mobile one** — the three `config_device_*` booleans sat
+  under `values-mcc310-mnc240` and `-mnc260`, so VoLTE worked on Mint and T-Mobile and nowhere else.
+  Now unqualified.
+- **0036 read back what the vendor IMS config will actually admit** — the vendor `ImsConfigImpl`
+  validates every item against a fixed set and refuses everything else as "Invalid API request for
+  item". A sweep behind `persist.ether.ims.configprobe` reads every item, and a refused
+  `setProvisionedValue` is now logged instead of reading as a completed set.
+- **0037 turn Wi-Fi calling off, because it cannot work here** — a toggle that appears and then fails
+  every time is worse than no toggle. `config_device_wfc_ims_available` false, with
+  `carrier_wfc_ims_available_bool` and `editable_wfc_mode_bool` following.
+- **0038 grant the three boot denials that are real, and explain the fourth** — `robinled_app`
+  traversing `/data`, `ueventd` reading `/proc/device-tree/compatible` (given its own type rather than
+  granting read on all of `proc`), and `storaged` reading `sysfs_disk_stat`, whose path was already
+  labelled and only lacked the permission. `init`'s write to `discard_max_bytes` is deliberately not
+  granted: the file is read-only on this kernel and the writer is upstream AOSP's own `init.rc`, so an
+  allow would silence the log without changing anything.
 
 ### `frameworks/base`
 
