@@ -426,7 +426,7 @@ below: what broke → what the patch does → what it costs.
 - **0028 do not block on incoming-call delivery (legacy IMS)** — `ImsPhoneCallTracker.onIncomingCall`
   defaults to `executeAndWait()`, i.e. `CompletableFuture.runAsync(task, mExecutor).join()`, which
   deadlocks against the legacy bridge's binder thread and loses the call.
-- **0029 switch the IWLAN transport on for Wi-Fi calling** — kept for the record rather than because it
+- **0029 wire up the IWLAN data path, which this modem never uses** — kept for the record rather than because it
   works: the modem stores and acknowledges the configuration (`wifi_call: 2`) and never registers an
   ePDG. Superseded by 0037, which turns the feature off; the full account is `VOLTE-BRINGUP.md` §8.
 - **0030 drive the flashlight through the flash subdev, not the PMIC** — the torch never emitted light
