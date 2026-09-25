@@ -27,7 +27,6 @@ malformed config cannot be used to attack the platform, which means a nested bun
 is dropped in silence. The XML compiles into the APK correctly -- verified with aapt2, attributes
 and all -- and simply never appears in the merged config, while every scalar around it applies. It
 looks exactly like a change that worked.
-
 ---
  .../telephony/CarrierConfigManager.java       | 29 ++++++++++++++++++-
  1 file changed, 28 insertions(+), 1 deletion(-)

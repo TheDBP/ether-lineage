@@ -1,0 +1,143 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Thu, 24 Sep 2026 21:00:37 -0400
+Subject: [PATCH] ether: VoLTE is a device capability, not a T-Mobile one
+
+config_device_volte_available, config_device_vt_available and config_device_wfc_ims_available were
+under values-mcc310-mnc240 and values-mcc310-mnc260, so VoLTE worked on Mint and T-Mobile and was
+off everywhere else. Put any other SIM in and the resource fell back to the AOSP default of false.
+
+That is the wrong axis. isVolteEnabledByPlatform() ANDs the device leg with the carrier's
+carrier_volte_available_bool: the first says "this hardware can do it", the second says "this
+network permits it". Qualifying the device leg by carrier meant every network except the two we had
+directories for was refused before its own carrier config was ever consulted -- including carriers
+AOSP already ships working VoLTE configuration for.
+
+It was never a decision. The config originally existed only under mnc260, and patch 0025 fixed
+VoLTE by adding mnc240 once we found resource qualifiers resolve from the SIM rather than the
+serving network. Nobody asked whether it should be qualified at all.
+
+So the device legs move to the unqualified overlay, and the mcc/mnc directories keep only what is
+genuinely per-carrier: config_carrier_volte_available and config_volte_replacement_rat, whose value
+of 3 is explicitly T-Mobile's.
+
+A carrier whose config says VoLTE is unavailable still gets no VoLTE, via the leg that is supposed
+to decide that. Untested on any network but this one, which is rather the point.
+---
+ .../res/res/values-mcc310-mnc240/config.xml   | 32 ++++++-------------
+ .../res/res/values-mcc310-mnc260/config.xml   | 30 ++++++-----------
+ .../base/core/res/res/values/config.xml       | 18 +++++++++++
+ 3 files changed, 37 insertions(+), 43 deletions(-)
+
+diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
+index 60ee34b..b18ed8e 100644
+--- a/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
++++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
+@@ -1,30 +1,16 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<!-- Mint Mobile (MCC 310 / MNC 240) VoLTE / VT / Wi-Fi-Calling.
++<!-- Mint Mobile (MCC 310 / MNC 240). Carrier-specific legs only.
+ 
+-     Mint runs on T-Mobile's network but issues its own SIMs, and Android picks resource
+-     mcc/mnc qualifiers from the SIM, not from the serving network. On this device
+-     gsm.sim.operator.numeric reads 310240 while gsm.operator.numeric reads 310260, so the
+-     values-mcc310-mnc260 overlay never applied and config_device_volte_available fell back to
+-     the AOSP default of false. ImsManager.isVolteEnabledByPlatform() ANDs that resource with
+-     carrier_volte_available_bool, so VOICE never entered the CapabilityChangeRequest, the
+-     vendor stack was only ever told to enable UT over LTE, and the modem never registered.
++     The device-capability booleans (config_device_volte_available and friends) are NOT here: they
++     live unqualified in values/config.xml, because whether this modem can do VoLTE does not depend
++     on the SIM. Only genuinely per-carrier values belong in an mcc/mnc directory.
+ 
+-     Carrier config was not the problem: mConfigFromDefaultApp supplies
+-     carrier_volte_available_bool=true for this SIM. Only the device leg was false.
+-
+-     Keep this file in step with values-mcc310-mnc260/config.xml. -->
++     Worth keeping in mind for anything added here: Android resolves these qualifiers from the SIM,
++     not from the serving network. Mint runs on T-Mobile, so gsm.sim.operator.numeric reads 310240
++     while gsm.operator.numeric reads 310260, and a value placed only under mnc260 never applies to
++     a Mint SIM. That cost this port a long time when the device leg lived here. -->
+ <resources>
+-    <bool name="config_device_volte_available">true</bool>
+-    <!-- Video calling is off deliberately, not merely untested. The VT engine lib-imsvt.so
+-         imports IOMXObserver and IGraphicBufferAlloc, platform interfaces Android deleted outright
+-         when OMX moved to HIDL/Codec2: 61 unresolved symbols, and not shimmable. libshim_vtsurface
+-         only gets the JNI layer loading so ImsVideoGlobals.init() can create its singletons; it
+-         does not make video work. isVtEnabledByPlatform() ANDs this with the carrier's
+-         KEY_CARRIER_VT_AVAILABLE_BOOL, so false here removes the Carrier video calling toggle and
+-         stops the framework ever requesting a VT capability. -->
+-    <bool name="config_device_vt_available">false</bool>
+-    <bool name="config_device_wfc_ims_available">true</bool>
+-    <!-- legacy leg some code paths still consult -->
++    <!-- legacy carrier leg some code paths still consult -->
+     <bool name="config_carrier_volte_available">true</bool>
+     <!-- displayed RAT during a VoLTE call; 3 = UMTS, T-Mobile's value -->
+     <integer name="config_volte_replacement_rat">3</integer>
+diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+index 602887b..a1fc5dc 100644
+--- a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
++++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
+@@ -1,26 +1,16 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<!-- T-Mobile US (MCC 310 / MNC 260) VoLTE / VT / Wi-Fi-Calling. NOT Mint: Mint SIMs
+-     report 310240 and are handled by the values-mcc310-mnc240 sibling, because Android
+-     takes these qualifiers from the SIM and not from the serving network.
+-     Android applies this values-mcc310-mnc260 overlay ONLY when a 310/260 SIM is present,
+-     so it is inherently scoped to T-Mobile's network — no other carrier is touched.
++<!-- T-Mobile US (MCC 310 / MNC 260). Carrier-specific legs only.
+ 
+-     config_device_volte_available is the resource ImsManager.isVolteEnabledByPlatform()
+-     actually reads. The old carrier-agnostic patch set config_carrier_volte_available, which
+-     that path ignores, so it only ever worked via the persist.dbg global override (dropped
+-     here). Paired with the T-Mobile-filtered CarrierConfig bundle in the CarrierConfig overlay. -->
++     The device-capability booleans (config_device_volte_available and friends) are NOT here: they
++     live unqualified in values/config.xml, because whether this modem can do VoLTE does not depend
++     on the SIM. Only genuinely per-carrier values belong in an mcc/mnc directory.
++
++     Worth keeping in mind for anything added here: Android resolves these qualifiers from the SIM,
++     not from the serving network. Mint runs on T-Mobile, so gsm.sim.operator.numeric reads 310240
++     while gsm.operator.numeric reads 310260, and a value placed only under mnc260 never applies to
++     a Mint SIM. That cost this port a long time when the device leg lived here. -->
+ <resources>
+-    <bool name="config_device_volte_available">true</bool>
+-    <!-- Video calling is off deliberately, not merely untested. The VT engine lib-imsvt.so
+-         imports IOMXObserver and IGraphicBufferAlloc, platform interfaces Android deleted outright
+-         when OMX moved to HIDL/Codec2: 61 unresolved symbols, and not shimmable. libshim_vtsurface
+-         only gets the JNI layer loading so ImsVideoGlobals.init() can create its singletons; it
+-         does not make video work. isVtEnabledByPlatform() ANDs this with the carrier's
+-         KEY_CARRIER_VT_AVAILABLE_BOOL, so false here removes the Carrier video calling toggle and
+-         stops the framework ever requesting a VT capability. -->
+-    <bool name="config_device_vt_available">false</bool>
+-    <bool name="config_device_wfc_ims_available">true</bool>
+-    <!-- legacy leg some code paths still consult -->
++    <!-- legacy carrier leg some code paths still consult -->
+     <bool name="config_carrier_volte_available">true</bool>
+     <!-- displayed RAT during a VoLTE call; 3 = UMTS, T-Mobile's value -->
+     <integer name="config_volte_replacement_rat">3</integer>
+diff --git a/overlay/frameworks/base/core/res/res/values/config.xml b/overlay/frameworks/base/core/res/res/values/config.xml
+index b58855e..5e72034 100644
+--- a/overlay/frameworks/base/core/res/res/values/config.xml
++++ b/overlay/frameworks/base/core/res/res/values/config.xml
+@@ -281,4 +281,22 @@
+          colon-separated *string*; a string-array is silently ignored. -->
+     <string name="config_defaultListenerAccessPackages" translatable="false">com.nextbit.robinled</string>
+ 
++    <!-- IMS device capability. This is the "can this hardware do it" leg, and it has nothing to do
++         with which SIM is inserted, so it is deliberately NOT under an mcc/mnc qualifier.
++
++         It used to be, and that was the wrong axis: ImsManager.isVolteEnabledByPlatform() ANDs this
++         with the carrier's carrier_volte_available_bool, so qualifying the device leg by carrier
++         meant every network except the two we had directories for was refused before its own
++         carrier config was ever consulted, including carriers AOSP ships working VoLTE config for.
++         Carrier permission is the carrier leg's job.
++
++         Video calling is off deliberately, not merely untested: lib-imsvt.so imports IOMXObserver
++         and IGraphicBufferAlloc, platform interfaces deleted outright when OMX moved to HIDL and
++         Codec2, among 61 unresolved symbols, and they are not shimmable. libshim_vtsurface exists
++         only so ImsVideoGlobals.init() can construct its singletons. False here removes the carrier
++         video calling toggle and stops the framework requesting a VT capability at all. -->
++    <bool name="config_device_volte_available">true</bool>
++    <bool name="config_device_vt_available">false</bool>
++    <bool name="config_device_wfc_ims_available">true</bool>
++
+ </resources>
