@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: TheDBP <TheDBP@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 14:03:53 -0400
+Subject: [PATCH] ether: turn Wi-Fi calling off, because it cannot work here
+
+A toggle that appears and fails every time is worse than no toggle. Wi-Fi calling
+is not achievable on this hardware and the reason is below anything a ROM can
+reach: the framework path is complete, the modem's own EFS is provisioned for iWLAN
+as fully as a handset that sells the feature, and the modem still never attempts an
+ePDG tunnel. A later modem build cannot be substituted either -- it asks PIL for a
+100 MB relocatable region against a 90 MB modem_mem reservation that cannot grow,
+since peripheral_mem ends exactly where modem_mem begins.
+
+config_device_wfc_ims_available false is the switch that keeps the toggle out of
+Settings. carrier_wfc_ims_available_bool follows it so the carrier config does not
+advertise a capability the device does not have, and editable_wfc_mode_bool goes
+with them: there is no point offering to edit the mode of a dead feature.
+
+VoLTE is untouched. carrier_volte_override_wfc_provisioning_bool stays true
+deliberately -- frameworks/opt/net/ims reads it on the VoLTE path, and it is not
+ours to tidy away while VoLTE depends on it.
+---
+ overlay/frameworks/base/core/res/res/values/config.xml | 9 ++++++++-
+ overlay/packages/apps/CarrierConfig/res/xml/vendor.xml | 4 ++--
+ 2 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/overlay/frameworks/base/core/res/res/values/config.xml b/overlay/frameworks/base/core/res/res/values/config.xml
+index 5e72034..1b90e6c 100644
+--- a/overlay/frameworks/base/core/res/res/values/config.xml
++++ b/overlay/frameworks/base/core/res/res/values/config.xml
+@@ -297,6 +297,13 @@
+          video calling toggle and stops the framework requesting a VT capability at all. -->
+     <bool name="config_device_volte_available">true</bool>
+     <bool name="config_device_vt_available">false</bool>
+-    <bool name="config_device_wfc_ims_available">true</bool>
++    <!-- Wi-Fi calling is false because it cannot work on this hardware, not because it was not
++         tried. The framework side is complete and the modem's own EFS is provisioned for iWLAN as
++         fully as a handset that sells the feature, but the modem never attempts an ePDG tunnel, and a
++         later modem build cannot be loaded: it asks PIL for a 100 MB relocatable region against a
++         90 MB modem_mem reservation that cannot grow, because peripheral_mem ends exactly where it
++         begins. True here only produces a toggle that appears and then fails every time, which is
++         worse than no toggle. Full account in VOLTE-BRINGUP.md section 8. -->
++    <bool name="config_device_wfc_ims_available">false</bool>
+ 
+ </resources>
+diff --git a/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml b/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
+index 46a5504..8d49ddc 100644
+--- a/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
++++ b/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
+@@ -11,10 +11,10 @@
+     <carrier_config mcc="310" mnc="260">
+         <boolean name="carrier_volte_available_bool" value="true" />
+         <boolean name="carrier_vt_available_bool" value="true" />
+-        <boolean name="carrier_wfc_ims_available_bool" value="true" />
++        <boolean name="carrier_wfc_ims_available_bool" value="false" />
+         <boolean name="enhanced_4g_lte_on_by_default_bool" value="true" />
+         <boolean name="editable_enhanced_4g_lte_bool" value="true" />
+-        <boolean name="editable_wfc_mode_bool" value="true" />
++        <boolean name="editable_wfc_mode_bool" value="false" />
+         <boolean name="carrier_volte_provisioning_required_bool" value="false" />
+         <boolean name="carrier_ims_gba_required_bool" value="false" />
+         <boolean name="carrier_volte_override_wfc_provisioning_bool" value="true" />
