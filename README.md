@@ -6,8 +6,8 @@ replays onto a copy of that tree recovered from Software Heritage (`vendored/`, 
 the `main` branch of [ether-trees](https://github.com/TheDBP/ether-trees)), and everything above it
 is new.
 
-**It boots and works.** WiFi, Bluetooth, camera, audio, adb, LTE data, SMS and visual voicemail all
-function. No VoLTE — see *Known issues* for what is still open.
+**It boots and works.** WiFi, Bluetooth, camera, audio, adb, LTE data, SMS, visual voicemail, the
+flashlight and VoLTE all function. No Wi-Fi calling — see *Known issues* for what is still open.
 
 ## What this build actually changes
 
@@ -109,9 +109,9 @@ Beyond the tuning, this build restores or adds:
 | LEDs | rear cluster: notification pulse, charge gauge, boot chase |
 | LiveDisplay | colour calibration works; monochrome mode has no visible effect |
 | adb | USB (wireless via Developer options, as stock) |
-| Cellular | LTE data, SMS, visual voicemail (T-Mobile US); no VoLTE or Wi-Fi calling — see *Known issues* |
+| Cellular | LTE data, SMS, visual voicemail, VoLTE (verified on T-Mobile US); no Wi-Fi calling or video calling — see *Known issues* |
 
-Branches: `lineage-20.0` (this, released), `lineage-20.0-volte` (VoLTE plan and inventory, `VOLTE.md`),
+Branches: `lineage-20.0` (this, released), `lineage-20.0-volte` (VoLTE working; see `VOLTE-BRINGUP.md`),
 `lineage-21.0` (in progress), `main` (landing page). This repo's own `lineage-18.1` and
 `lineage-19.1` attempts were never finished and are gone; nothing in them is coming forward.
 
@@ -136,12 +136,15 @@ Full account in **[PORT-LOG.md](PORT-LOG.md)**.
 
 ## Known issues
 
-- **No VoLTE, no Wi-Fi calling.** LTE data, SMS and visual voicemail work; voice needs 2G/3G
-  fallback, which T-Mobile and AT&T no longer provide. The modem has an IMS stack and a T-Mobile
-  config, and the stock 7.1.1 zip ships the QTI IMS userspace (`org.codeaurora.ims`, `ims*daemon`,
-  `lib-ims*`), but that ImsService is the pre-Android-9 `ServiceManager("ims")` kind, which 13
-  has no binding path for. Plan in `VOLTE.md` on branch `lineage-20.0-volte`.
-- **Flashlight does not work.** The torch toggle has no effect. Not yet diagnosed.
+- **No Wi-Fi calling.** VoLTE works; Wi-Fi calling does not, and every layer outside the modem
+  firmware has been eliminated. The framework delivers the enable correctly, and the modem's own EFS
+  already carries the T-Mobile ePDG address, the IKEv2 parameters and a PDN policy permitting IWLAN
+  for the IMS bearer. The modem acknowledges the setting and then never attempts a tunnel — no ePDG
+  DNS, no IKE, no ESP — and errors on the QMI request that would configure handover. What remains is
+  a flag inside the firmware build. Full account in `VOLTE-BRINGUP.md` §8.
+- **No video calling.** Switched off deliberately rather than broken: `lib-imsvt.so` imports
+  `IOMXObserver` and `IGraphicBufferAlloc`, platform interfaces deleted when OMX moved to
+  HIDL/Codec2, among 61 unresolved symbols. Removed subsystems are not shimmable.
 - **`CNEService` crashes on every Wi-Fi/mobile transition.** Android 7 blob calling
   `INetworkPolicyManager.getNetworkQuotaInfo`, removed in 12. Restarts itself; nothing depends on it.
   Fix: drop the APK from `proprietary-files.txt`, keep `cnd`.
@@ -257,7 +260,7 @@ work on any device rather than being wired into this tree.
 | `firefox` | Firefox (Fennec F-Droid) as the browser, replacing Jelly — still available, but 320 MB staged, so no preset carries it now |
 | `fulguris` | Fulguris as the browser, replacing Jelly — a WebView browser, 9 MB where Fennec stages 320 MB. **In no preset**: it overrides Jelly, so a preset carrying it ships the only browser in the image — and its first run asks you to accept a privacy policy and terms with nothing else able to open them. Dropping it restores Jelly. `EXTRA_OPTIONS=fulguris` to add it |
 | `connectbot` | ConnectBot: an SSH client with saved hosts, keys and port forwarding |
-| `linphone` | Linphone: a SIP client, for voice over data where the device has no VoLTE |
+| `linphone` | Linphone: a SIP client, for voice over data where a device or network has no VoLTE |
 | `gapps` | Google apps: Play Store and GMS from MindTheGapps, plus Google's versions of the stock apps |
 | `google-feed-off` | Google feed (-1 screen) off by default |
 | `k9` | K-9 Mail (the Thunderbird for Android codebase) as the mail client |
