@@ -1,11 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Fri, 25 Sep 2026 14:18:11 -0400
-Subject: [PATCH] ether: grant the three boot denials that are real, and
- explain the fourth
+Date: Fri, 25 Sep 2026 14:35:44 -0400
+Subject: [PATCH] ether: grant the two boot denials that can be expressed,
+ explain the two that cannot
 
 Captured from a running handset rather than written from memory, which changed the
-answer for one of them.
+answer for half of them.
 
 robinled_app wanted search on system_data_file: it traverses /data to reach its own
 sandbox. search on the directory grants no listing and no read of anything inside.
@@ -13,26 +13,24 @@ sandbox. search on the directory grants no listing and no read of anything insid
 ueventd wanted read on /proc/device-tree/compatible while resolving a firmware
 load. Unlabelled that is plain `proc`, and granting read on `proc` would hand it
 everything unlabelled under /proc -- so it gets its own type and a genfscon, and
-ueventd is allowed only that.
+ueventd is allowed only that. ueventd is public policy, so a device tree may extend
+it; storaged is not.
 
-storaged wanted read on sysfs_disk_stat. The path was already labelled by
-device/qcom/sepolicy-legacy and the type already declared in file.te; only the
-permission was missing, so the read failed on every poll and storaged attributed no
-disk I/O at all.
+storaged's read of sysfs_disk_stat cannot be expressed from a device tree at all.
+The rule needs a platform-private domain AND a vendor-declared type, and neither
+policy segment may name both -- vendor cannot see `storaged`, system_ext private
+cannot see sysfs_disk_stat. Attempting it failed the build with "unknown type
+storaged". The cost is that storaged attributes no per-uid disk I/O.
 
-init's write to discard_max_bytes is deliberately NOT granted. The file is
--r--r--r-- on this 3.10 kernel and the writer is upstream AOSP's own
-/system/etc/init/hw/init.rc, so the write fails on the file mode whatever the
-policy says. An allow would silence the denial without changing behaviour, and
-mislabelling the mmc request queue to do it is not worth three log lines a boot.
+init's write to discard_max_bytes is not granted either: the file is -r--r--r-- on
+this 3.10 kernel and the writer is upstream AOSP's own init.rc, so an allow would
+silence the denial without changing behaviour.
 ---
- sepolicy/file.te         | 4 ++++
- sepolicy/genfs_contexts  | 1 +
- sepolicy/robinled_app.te | 4 ++++
- sepolicy/storaged.te     | 5 +++++
- sepolicy/ueventd.te      | 5 +++++
- 5 files changed, 19 insertions(+)
- create mode 100644 sepolicy/storaged.te
+ sepolicy/file.te         |  4 ++++
+ sepolicy/genfs_contexts  |  1 +
+ sepolicy/robinled_app.te |  4 ++++
+ sepolicy/ueventd.te      | 12 ++++++++++++
+ 4 files changed, 21 insertions(+)
  create mode 100644 sepolicy/ueventd.te
 
 diff --git a/sepolicy/file.te b/sepolicy/file.te
@@ -68,25 +66,21 @@ index d630603..90859aa 100644
 +# Traverse /data to reach its own sandbox. `search` on the directory only -- it grants no listing and
 +# no read of anything inside, which is why this is narrower than it looks.
 +allow robinled_app system_data_file:dir search;
-diff --git a/sepolicy/storaged.te b/sepolicy/storaged.te
-new file mode 100644
-index 0000000..317924b
---- /dev/null
-+++ b/sepolicy/storaged.te
-@@ -0,0 +1,5 @@
-+# storaged reads the eMMC request statistics to attribute disk I/O per uid. The path is already
-+# labelled sysfs_disk_stat by device/qcom/sepolicy-legacy (legacy-common/file_contexts), and the type
-+# is declared in file.te here -- only the permission was missing, so the read was denied on every
-+# poll and storaged reported nothing.
-+allow storaged sysfs_disk_stat:file r_file_perms;
 diff --git a/sepolicy/ueventd.te b/sepolicy/ueventd.te
 new file mode 100644
-index 0000000..979f367
+index 0000000..8975297
 --- /dev/null
 +++ b/sepolicy/ueventd.te
-@@ -0,0 +1,5 @@
+@@ -0,0 +1,12 @@
 +# ueventd reads /proc/device-tree/compatible while resolving a firmware load. Unlabelled that file is
 +# plain `proc`, and allowing read on `proc` would grant everything unlabelled under /proc, so it is
 +# given its own type in file.te and labelled in genfs_contexts.
 +allow ueventd proc_device_tree:dir search;
 +allow ueventd proc_device_tree:file r_file_perms;
++
++# storaged's read of sysfs_disk_stat is deliberately NOT fixed here. The rule needs both `storaged`,
++# which is platform-private, and sysfs_disk_stat, which this device tree declares -- so it can be
++# written in neither segment: vendor policy cannot name a private platform domain, and system_ext
++# private policy cannot name a vendor type. That is the split working as designed. The cost is that
++# storaged attributes no per-uid disk I/O; the fix would be moving the type into platform public
++# policy, which is more surgery than the feature is worth.

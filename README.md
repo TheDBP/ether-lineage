@@ -456,12 +456,14 @@ below: what broke → what the patch does → what it costs.
 - **0037 turn Wi-Fi calling off, because it cannot work here** — a toggle that appears and then fails
   every time is worse than no toggle. `config_device_wfc_ims_available` false, with
   `carrier_wfc_ims_available_bool` and `editable_wfc_mode_bool` following.
-- **0038 grant the three boot denials that are real, and explain the fourth** — `robinled_app`
-  traversing `/data`, `ueventd` reading `/proc/device-tree/compatible` (given its own type rather than
-  granting read on all of `proc`), and `storaged` reading `sysfs_disk_stat`, whose path was already
-  labelled and only lacked the permission. `init`'s write to `discard_max_bytes` is deliberately not
-  granted: the file is read-only on this kernel and the writer is upstream AOSP's own `init.rc`, so an
-  allow would silence the log without changing anything.
+- **0038 grant the two boot denials that can be expressed, explain the two that cannot** —
+  `robinled_app` traversing `/data` (search only, no listing and no read of anything inside), and
+  `ueventd` reading `/proc/device-tree/compatible`, given its own type and `genfscon` rather than
+  granting read on all of `proc`. `storaged`'s read of `sysfs_disk_stat` cannot be written from a
+  device tree at all: the rule needs a platform-private domain *and* a vendor-declared type, and
+  neither policy segment may name both — attempting it fails the build with `unknown type storaged`.
+  `init`'s write to `discard_max_bytes` is not granted either, because the file is read-only on this
+  kernel and the writer is upstream AOSP's own `init.rc`.
 
 ### `frameworks/base`
 

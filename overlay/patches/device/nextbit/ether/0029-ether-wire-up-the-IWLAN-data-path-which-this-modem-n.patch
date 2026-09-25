@@ -1,7 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
 Date: Thu, 24 Sep 2026 17:34:34 -0400
-Subject: [PATCH] ether: wire up the IWLAN data path, which this modem never uses
+Subject: [PATCH] ether: wire up the IWLAN data path, which this modem never
+ uses
 
 persist.data.iwlan.enable is the QTI switch for the IWLAN data path an ePDG tunnel rides on; both
 netmgrd and qmuxd read it. Stock sets it on this device and this port did not carry it over.
@@ -18,7 +19,6 @@ tcpdump on wlan0 across a full boot sees no ePDG DNS, no IKE and no ESP. A later
 be substituted either: it asks PIL for a 100 MB relocatable region against a 90 MB modem_mem
 reservation that cannot grow, because peripheral_mem ends exactly where modem_mem begins. The full
 account is VOLTE-BRINGUP.md section 8.
-
 ---
  device.mk | 12 ++++++++++++
  1 file changed, 12 insertions(+)
