@@ -324,10 +324,45 @@ Relevant patches:
 
 ## 8. What is still open
 
-**Wi-Fi calling.** The platform gate is open — the toggle appears, and both
-`carrier_wfc_ims_available_bool` and `config_device_wfc_ims_available` are true. IWLAN registration
-and the ePDG tunnel are untested. It goes through the same bridge, so the call path should already
-work if registration does.
+**Wi-Fi calling.** Not working. The platform gate is open — the toggle appears, and both
+`carrier_wfc_ims_available_bool` and `config_device_wfc_ims_available` are true — and the call path
+goes through the same bridge, so it should work once registration does. Three things were wrong
+underneath, found in this order:
+
+*The modem is not the blocker.* `strings` over `/firmware/image/modem.b*` gives `IWLAN S2B IFACE
+1..16`, an IMS RAT-change handler that knows about IWLAN, and S2b NV item paths. The carrier config
+in the same image carries `epdg_fqdn:ss.epdg.epc.mnc260.mcc310…` with `IWLAN` in its
+`Supported_RAT_Priority_List`. The capability was compiled in and left switched off; Wi-Fi calling
+was never a shipped feature on this device.
+
+*CNE could not read its own configuration.* Every `persist.cne.*` name fell through to
+`default_prop`, which `cnd` is refused, so `persist.cne.feature=1` was set and never seen. The
+visible consequence was one layer up, in the RIL: `pref data tech UNKNOWN` with a candidate list of
+CDMA/EVDO/GSM/LTE and no IWLAN. Device patch 0031 gives those prefixes their own type; the measured
+result was `pref data tech` becoming `LTE`. IWLAN still did not appear.
+
+*The modem was declining, not failing.* Toggling Wi-Fi calling does reach it and the QMI transaction
+succeeds, and it answers:
+
+    client_provisioning_config_ind_hdlr: .. client_prov_enabled: 0
+                                         .. wifi_call_preference: 0    (1 was sent)
+
+Of the seven client-provisioning items the RIL exposes, we sent `WIFI_CALL` and
+`WIFI_CALL_PREFERENCE` and never `ENABLE_VOWIFI` — the user's *preference* for a feature the modem
+does not consider *provisioned*. `ImsManager.isWfcProvisionedOnDevice()` only reaches the branch that
+pushes the provisioning value when `isMmTelProvisioningRequired(VOICE, IWLAN)` is true; ours was
+false, so it short-circuited to "provisioned" locally and sent nothing. This is also why VoLTE was
+never affected by the same setting: VoLTE works because the modem's own carrier config enables it,
+so it never needed this path.
+
+Device patch 0035 sets `ims.mmtel_requires_provisioning_bundle` for VOICE over IWLAN alone. The
+deprecated global `carrier_volte_provisioning_required_bool` stays false deliberately — switching it
+on would gate working VoLTE on provisioning too. **Untested at time of writing.**
+
+`persist.vendor.cnd.wqe` is deliberately left off. WQE is Wireless Quality Estimation: it actively
+probes an ICD server to measure RTT and bitrate and reports a verdict to the modem. It is not a gate
+for Wi-Fi calling, and with no probe server configured it may report the link as bad and suppress the
+handover we are trying to get.
 
 **Video calling will not work.** `lib-imsvt.so` imports `IOMXObserver` and `IGraphicBufferAlloc` —
 platform interfaces deleted outright when OMX moved to HIDL/Codec2 — among 61 unresolved symbols.
