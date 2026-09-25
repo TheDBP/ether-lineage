@@ -283,7 +283,7 @@ work on any device rather than being wired into this tree.
 
 ## Device patches
 
-50 patches across 18 upstream projects, applied at build time from `overlay/patches/`. Nothing
+76 patches across 20 upstream projects, applied at build time from `overlay/patches/`. Nothing
 here is a fork: each is a single commit against the upstream tree, replayed on every build, so
 upstream stays upstream and what we changed stays legible. One patch per thing it enables. Each entry
 below: what broke → what the patch does → what it costs.
@@ -420,6 +420,15 @@ below: what broke → what the patch does → what it costs.
   compat shim and ckati failed (`hwcomposer.msm8992 missing libbfqio`). Same change upstream made
   for msm8996. Cost: the vsync thread loses realtime IO priority.
 
+### `hardware/ril`
+
+- **0001 libril: stop exporting nanopb so the QTI blob can bind its own** — `libril-qc-qmi-1.so`
+  carries no nanopb; it imports `pb_encode`/`pb_decode` and hands over message descriptors generated
+  against nanopb 0.2.8, the version 7.1.1 shipped. Between 0.2.8 and 0.3.x nanopb inserted
+  `PB_LTYPE_BOOL` at 0x00 and shifted every other `PB_LTYPE_*` up, so the platform's newer nanopb
+  decodes every field of those descriptors as the wrong type. Not exporting the symbols lets the blob
+  bind the 0.2.8 copy that ships beside it.
+
 ### `kernel/nextbit/msm8992`
 
 - **0001 uapi: drop the `sockaddr_storage` alias that collides with A13 bionic** — A13's bionic
@@ -439,6 +448,13 @@ below: what broke → what the patch does → what it costs.
   needed >95 % busy, >25 ms frames, 50 ms accumulated: game constants. Measured 30 s of UI: 69.7 %
   at 180 MHz, 0 % above 367 MHz, dropping frames. Now 80 % / one vsync / 25 ms; 180 MHz floor
   unchanged.
+
+### `packages/apps/Settings`
+
+- **0001 Settings: do not poll VoNR on a radio that predates NR** — opening SIM settings ANRs on
+  msm8992. `NrAdvancedCallingPreferenceController.init()` creates its `TelephonyCallback` before any
+  capability check, and `onStart()` registers it whenever it is non-null, so the callback runs even
+  though `getAvailabilityStatus()` has already returned `CONDITIONALLY_UNAVAILABLE`.
 
 ### `packages/modules/Bluetooth`
 
@@ -470,13 +486,6 @@ below: what broke → what the patch does → what it costs.
   (`sigaction` without `SA_RESTART`, `unix_read_interruptible`/`adb_writev`, because the wrappers
   retry on EINTR). This f_fs returns ENODEV after a DISABLE until reopened, so every enumeration is
   a fresh transport.
-
-### `packages/services/Telephony`
-
-- **Revert "Restrict USSD requests to the subscription's associated user."** — upstream 20.0
-  applied it without its `frameworks/base` half (`checkSubscriptionAssociatedWithUser` does not
-  exist on A13), so every lineage-20.0 build fails to compile. Backporting would drag in the A14
-  subscription-to-user API. No security impact: the API it guards does not exist on 13.
 
 ### `system/bpf`
 
@@ -513,6 +522,13 @@ below: what broke → what the patch does → what it costs.
 - **0002 netd: do not exit when there is no cgroup v2 root** — `main.cpp` exited before
   `libnetd_updatable_init()`, so the Connectivity degradation never ran: 107 restarts in ten
   minutes, framework never finished booting. `cg2_path` left empty and passed through.
+
+### `vendor/apn`
+
+- **0001 US: add the missing IMS APN for 310240 (Mint)** — 310240 carries six APN rows and not one is
+  `type=ims`, so a Mint SIM has no IMS PDN to attach to. 310260 (T-Mobile proper, which this SIM
+  registers on as an EHPLMN) has eight, but Android matches APNs on the SIM's own operator numeric, so
+  none of them are reachable. The visible effect is that `imsdatadaemon` never finishes starting.
 
 ### `vendor/lineage`
 

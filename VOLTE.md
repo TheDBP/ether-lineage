@@ -1,3 +1,9 @@
+> **SUPERSEDED — historical.** This was the plan and inventory written before the work was done, and
+> its "Unverified" notes have since been answered, several of them differently than guessed here. The
+> account of what is actually true is `VOLTE-BRINGUP.md`: VoLTE works, Wi-Fi calling does not and is
+> not achievable on this hardware, and the reasons are measured rather than predicted. Kept only
+> because the inventory of what the stock zip ships is still useful.
+
 # VoLTE on ether — work branch `lineage-20.0-volte`
 
 Goal: IMS registration (`dumpsys telephony.registry` → `mImsRegState=REGISTERED`) and a VoLTE call on
