@@ -455,6 +455,13 @@ before Linux runs. Finding 10 MB means relocating fixed carve-outs that firmware
 depends on -- and a modem that loaded would still have to authenticate against a QFPROM root, which
 remains untested.
 
+**Verified on hardware 2026-09-25:** with `config_device_wfc_ims_available` false the Wi-Fi calling
+entry is absent from Settings entirely, and VoLTE is unaffected on the same handset -- SIM loaded,
+IN_SERVICE, `changeEnabledCapabilities cap: 0 radioTech: 13 enabled`. Note that `dumpsys carrier_config`
+is useless for checking this: it prints `carrier_wfc_ims_available_bool` more than once, from different
+config layers, with different values. The device-capability resource has no adb read path, so the only
+reliable check is whether the Settings entry is there.
+
 **So Wi-Fi calling is not achievable on this device, and specifically not as something a ROM can
 ship.** Everything above the modem is correct and does ship: the framework delivers the enable, and
 the modem's EFS is provisioned for iWLAN as completely as a handset that sells the feature. The modem
