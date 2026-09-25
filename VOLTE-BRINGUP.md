@@ -436,27 +436,37 @@ modem still never attempts a tunnel. What remains is inside the modem -- the S2b
 QMI surface that would configure it errors, and no WLAN RAT is ever reported. That is a build or
 feature flag in the firmware, not something reachable from Android.
 
-*What is left to try, and what it needs.* Everything outside the modem firmware is eliminated: the AP
-path delivers correctly, and the EFS provisioning matches a device that ships Wi-Fi calling. The one
-remaining variable is the firmware build itself -- ours is `MPSS.BO.2.6.2` from early 2016, and a
-Nexus 5X radio of the same M8994F line reached `2.6.42`. So:
+*The donor firmware experiment was run, and it closes the question.* A Nexus 5X `2.6.42` modem was
+written onto a spare Robin -- only `modem.b*` and `modem.mdt`, leaving `adsp`, `qwlan30`, `keymaster`,
+`widevine` and `cmnlib` in place, all 19 files verified byte-identical on the partition. It does not
+fail authentication. It never gets that far:
 
-  - Replace **only** `modem.b*` and `modem.mdt` inside `/firmware/image`. Leave `adsp.*`, `qwlan30`,
-    `keymaster`, `widevine` and `cmnlib` alone -- they share that one vfat, and replacing the whole
-    partition is what the "unstable modem swap" reports on this device amount to.
-  - `/firmware` has roughly 8 MB free and a 2.6.42 modem set is about 2.5 MB larger than ours, so the
-    old `modem.*` has to be deleted before the new files are copied. That leaves a window with no
-    modem; recover with `fastboot flash modem` from a partition backup.
-  - Back up `modemst1`, `modemst2`, `fsg`, `fsc`, `modem` and `persist` first, hash-verified. The
-    first four are the modem's EFS and restoring them undoes any NV change.
-  - Signing is the open question. Our `modem.mdt` chains to `QualcommRootCa` via `SecTools Test User`
-    and is marked `DEBUG` -- a Qualcomm test-signed image, not an OEM-signed one. A production-fused
-    device rejects test-signed images, so this one booting suggests secure boot is not enforced for
-    the modem and a foreign (e.g. LGE-signed) image may load. Unverified: check the cert chain of any
-    donor and of the target handset before assuming.
-  - Do it on a spare handset. If the firmware does not authenticate the modem subsystem will not
-    start and the device has no cellular until restored, and a donor built for different RF hardware
-    can come up degraded rather than cleanly failing.
+    pil-q6v5-mss fc880000.qcom,mss: modem: Failed to allocate relocatable region of size 6400000
+    init: Service 'modem_hold' exited with status 1          (retries, fails identically)
+
+`0x6400000` is 100 MB. The reserved region is 90 MB and the carve-outs are packed:
+
+    msm8992.dtsi  peripheral_mem  0x07400000 + 0x1c00000   ends exactly at 0x09000000
+    msm8992.dtsi  modem_mem       0x09000000 + 0x5a00000   90 MB, ends 0x0EA00000
+
+`peripheral_mem` ends precisely where `modem_mem` begins, so the region cannot grow downward, and
+these physical addresses are coordinated with the bootloader and TZ, which program the MSS region
+before Linux runs. Finding 10 MB means relocating fixed carve-outs that firmware below the kernel also
+depends on -- and a modem that loaded would still have to authenticate against a QFPROM root, which
+remains untested.
+
+**So Wi-Fi calling is not achievable on this device, and specifically not as something a ROM can
+ship.** Everything above the modem is correct and does ship: the framework delivers the enable, and
+the modem's EFS is provisioned for iWLAN as completely as a handset that sells the feature. The modem
+itself will not attempt a tunnel, its own firmware generation is the reason, and a newer generation
+does not fit in the memory the hardware reserves for it. Treat VoLTE as the win here and stop.
+
+Two practical notes for anyone who repeats any of this. Do not `adb push` into `/firmware`: vfat has no
+ownership, so push truncates the destination, writes, then fails `remote fchown failed` and cleans up,
+destroying the original and leaving nothing -- it removed all 19 `modem.*` files in one command. Stage
+to `/data/local/tmp` and `cp` on-device instead. And `fastboot flash modem <backup>.img` restored the
+partition completely, twice, so a hash-verified backup of `modem`, `modemst1`, `modemst2`, `fsg`, `fsc`
+and `persist` is a sufficient safety net.
 
 Two EFS deltas are currently applied on the development handset and are inert: the
 `natt_keepalive_wifi_offload:TRUE;` line appended to `/data/iwlan_s2b_config.txt`, and
