@@ -326,8 +326,8 @@ Relevant patches:
 
 **Wi-Fi calling.** Not working. The platform gate is open — the toggle appears, and both
 `carrier_wfc_ims_available_bool` and `config_device_wfc_ims_available` are true — and the call path
-goes through the same bridge, so it should work once registration does. Three things were wrong
-underneath, found in this order:
+goes through the same bridge, so it should work once registration does. What was wrong underneath,
+in the order it was found:
 
 *The modem is not the blocker.* `strings` over `/firmware/image/modem.b*` gives `IWLAN S2B IFACE
 1..16`, an IMS RAT-change handler that knows about IWLAN, and S2b NV item paths. The carrier config
@@ -341,23 +341,45 @@ visible consequence was one layer up, in the RIL: `pref data tech UNKNOWN` with 
 CDMA/EVDO/GSM/LTE and no IWLAN. Device patch 0031 gives those prefixes their own type; the measured
 result was `pref data tech` becoming `LTE`. IWLAN still did not appear.
 
-*The modem was declining, not failing.* Toggling Wi-Fi calling does reach it and the QMI transaction
-succeeds, and it answers:
+*The modem accepts the switch and declines to act.* Tested 2026-09-24 on the flashed build. Every
+AP-side link in the chain was verified in a single boot, in this order:
 
-    client_provisioning_config_ind_hdlr: .. client_prov_enabled: 0
-                                         .. wifi_call_preference: 0    (1 was sent)
+    FeatureConnector     connection ready -> onMmTelAvailable            (~17s, every boot)
+    ImsProvisioning...   setInitialProvisioningKeys (voice, iwlan) true
+    MmTelFeatureCompat   changeEnabledCapabilities cap: 2 radioTech: 18 enabled
+    RIL                  set_ims_srv_status: Sending wifi call setting through set_service, value: 1
+    RIL                  CLIENT_PROVISIONING_WIFI_CALL_PREFERENCE mode 2 -> ims wifi mode 1, success
 
-Of the seven client-provisioning items the RIL exposes, we sent `WIFI_CALL` and
-`WIFI_CALL_PREFERENCE` and never `ENABLE_VOWIFI` — the user's *preference* for a feature the modem
-does not consider *provisioned*. `ImsManager.isWfcProvisionedOnDevice()` only reaches the branch that
-pushes the provisioning value when `isMmTelProvisioningRequired(VOICE, IWLAN)` is true; ours was
-false, so it short-circuited to "provisioned" locally and sent nothing. This is also why VoLTE was
-never affected by the same setting: VoLTE works because the modem's own carrier config enables it,
-so it never needed this path.
+The modem echoes `wifi_call: 2` (on) and then does nothing. `tcpdump -i wlan0`, across a full boot with
+Wi-Fi associated from 15s and across a `cmd phone ims disable/enable` cycle, captures no DNS for the
+ePDG FQDN, no IKE on UDP 500/4500 and no ESP. Its IMSA status indication reads `VOIP: service_status 2,
+rat 1` — it has the RAT field and only ever names WWAN.
 
-Device patch 0035 sets `ims.mmtel_requires_provisioning_bundle` for VOICE over IWLAN alone. The
-deprecated global `carrier_volte_provisioning_required_bool` stays false deliberately — switching it
-on would gate working VoLTE on provisioning too. **Untested at time of writing.**
+Two items read back wrong, and that is where this now stands:
+
+    client_prov_enabled: 0        never 1
+    wifi_call_preference: 0       mode 1 was set, "response success", reads back 0
+
+`client_prov_enabled: 0` means the modem provisions itself from NV instead of accepting the AP's
+provisioning. That matches the behaviour exactly: the setting is stored, the preference is discarded,
+no tunnel is attempted.
+
+*Patch 0035 works; legacy item 28 is a dead end.* `ims.mmtel_requires_provisioning_bundle` lands
+(`isImsProvisioningRequiredForCapability capability 1 tech 1 return value true`), so
+`setInitialProvisioningKeys` does now push the key — and the vendor stack refuses it:
+
+    ImsConfig            setConfig(): item = 28 value = 1
+    QImsService          ImsConfigImpl : Invalid API request for item
+    ImsConfigImplBase    Set provision value of 28 to 1 failed with error code 1
+
+`setProvisionedValue` is the wrong API for VoWiFi on this build; item 28 is not in its accepted set. Do
+not chase this by widening the bundle. The open question is which legacy item numbers this `ims.apk`
+does accept, and whether any maps to the RIL's `ENABLE_VOWIFI` or to `client_prov_enabled`.
+`ConfigWrapper` is our code, so probe from there rather than guessing.
+
+*CNE is not the gate.* `libcne.so` carries the iWLAN preference itself (`CneFeatureCache::setIwlanUserPref`,
+`"ePDG preference: %d"`) driven by `persist.vendor.cnd.iwlan`, which is already `true`. There is no HIDL
+entry point for it, so nothing on the AOSP side is missing a call.
 
 `persist.vendor.cnd.wqe` is deliberately left off. WQE is Wireless Quality Estimation: it actively
 probes an ICD server to measure RTT and bitrate and reports a verdict to the modem. It is not a gate
