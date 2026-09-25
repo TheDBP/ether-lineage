@@ -403,6 +403,34 @@ thing you want -- are **named nowhere in the modem image**. It references precis
 The rest are leftovers from older firmware or from AP-side provisioning tools. Writing an item this
 build never reads produces a convincing log and no effect.
 
+*The EFS is already provisioned for iWLAN, and that is not the gate either.* Do not cross-flash the
+modem partition to chase this. `/firmware` is one vfat holding the modem AND `adsp.*`, `qwlan30`,
+`keymaster`, `widevine`, `cmnlib` -- `fastboot flash modem NON-HLOS.bin` takes out audio, Wi-Fi and
+keymaster to change one thing, which is what the "unstable" reports amount to.
+
+An MCFG is not firmware, it is a container of EFS item values, so it can be read and diffed instead
+(`forge/tools/mcfg-items.py`). Against T-Mobile's own `mcfg_sw.mbn`, pulled from a Nexus 5X radio of
+the same M8994F line, this device's EFS comes out equivalent or better:
+
+    /data/iwlan_s2b_config.txt        identical -- same epdg_fqdn
+                                      (ss.epdg.epc.mnc260.mcc310), same IKEv2 params -- except a
+                                      missing natt_keepalive_wifi_offload:TRUE, and LF vs CRLF
+    /data/pdn_policy_db.txt           already Supported_RAT_Priority_List:WWAN,IWLAN for the ims
+                                      PDN, and IWLAN,WWAN for tmus
+    /efsprofiles/imshandoverconfig    a SUPERSET of T-Mobile's; ours adds the media jitter and
+                                      frame-loss thresholds
+    modem/mmode/wifi_config           byte-identical
+    wlan_config/wlan_offload_config   2 on both, so the earlier write experiment was always going
+                                      to be a no-op
+    ims/qp_ims_wifi_config            512 zero bytes in T-Mobile's MCFG too -- ours being zeroed is
+                                      normal, not a defect
+    wlan_config/iwlan_s2b_mtu_val     the only genuine absence (T-Mobile: 1280)
+
+Both deltas were written and are still in place -- the natt line appended in this device's own LF
+convention, and `iwlan_s2b_mtu_val` created as 1280. With Wi-Fi calling on and set to wifi-preferred
+(`wfc_ims_enabled=1, wfc_ims_mode=2`), neither changes anything: handover config still answers
+`RIL_E_MODEM_ERR`, and tcpdump on wlan0 sees no ePDG DNS, no IKE, no ESP.
+
 So: every AP-side path is correct and delivered, every EFS item this firmware reads is set, and the
 modem still never attempts a tunnel. What remains is inside the modem -- the S2b code is present, the
 QMI surface that would configure it errors, and no WLAN RAT is ever reported. That is a build or
