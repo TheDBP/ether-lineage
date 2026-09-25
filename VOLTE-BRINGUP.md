@@ -377,6 +377,37 @@ not chase this by widening the bundle. The open question is which legacy item nu
 does accept, and whether any maps to the RIL's `ENABLE_VOWIFI` or to `client_prov_enabled`.
 `ConfigWrapper` is our code, so probe from there rather than guessing.
 
+*The modem's iWLAN code is complete. Its configuration is not, and the configuration is not the gate
+either.* Diffed this modem against a Nexus 5X final radio -- same M8994F line, both MPSS.BO.2.6.x --
+and the Robin carries *more* iWLAN, not less: 323 `iwlan` strings against 264, 68 `epdg` against 53,
+19 `vowifi` against 1, plus the whole S2b subsystem (`iwlan_s2b_pdn_sm`, `iwlan_s2b_ikev2_hdlr`,
+`iwlan_s2b_epdg_addr_resolver`). The modem has its own IKEv2 client and its own ePDG resolver.
+
+Read its EFS directly with `forge/tools/diag-efs.sh`:
+
+    /nv/item_files/ims/IMS_enable                         1
+    /nv/item_files/ims/qipcall_domain_selection_enable    1
+    /nv/item_files/data/wlan_config/wlan_offload_config   2      only item in that directory
+    iwlan_s2b_mtu_val, wifi_oos_linger_timer,
+    wait_for_LTE_attach_timer, wlan_proxy_setup_timer,
+    data_wlan_acq_hyst_timer                              ENOENT
+
+`wlan_offload_config` was written to 1, and to 3, rebooting each time. Neither changes anything:
+handover config still answers `RIL_E_MODEM_ERR`, and a `tcpdump` on wlan0 sees no ePDG DNS, no IKE and
+no ESP. Restored to 2.
+
+Do not spend time on the other EFS items. `ims_operation_mode` (0x09) and the entire `qp_ims_*`
+family -- including a `qp_ims_wifi_config` that is 256 bytes of zeroes and looks like exactly the
+thing you want -- are **named nowhere in the modem image**. It references precisely two items under
+`/nv/item_files/ims`, `IMS_enable` and `qipcall_domain_selection_enable`, and both are already 1.
+The rest are leftovers from older firmware or from AP-side provisioning tools. Writing an item this
+build never reads produces a convincing log and no effect.
+
+So: every AP-side path is correct and delivered, every EFS item this firmware reads is set, and the
+modem still never attempts a tunnel. What remains is inside the modem -- the S2b code is present, the
+QMI surface that would configure it errors, and no WLAN RAT is ever reported. That is a build or
+feature flag in the firmware, not something reachable from Android.
+
 *CNE is not the gate.* `libcne.so` carries the iWLAN preference itself (`CneFeatureCache::setIwlanUserPref`,
 `"ePDG preference: %d"`) driven by `persist.vendor.cnd.iwlan`, which is already `true`. There is no HIDL
 entry point for it, so nothing on the AOSP side is missing a call.
