@@ -436,6 +436,33 @@ modem still never attempts a tunnel. What remains is inside the modem -- the S2b
 QMI surface that would configure it errors, and no WLAN RAT is ever reported. That is a build or
 feature flag in the firmware, not something reachable from Android.
 
+*What is left to try, and what it needs.* Everything outside the modem firmware is eliminated: the AP
+path delivers correctly, and the EFS provisioning matches a device that ships Wi-Fi calling. The one
+remaining variable is the firmware build itself -- ours is `MPSS.BO.2.6.2` from early 2016, and a
+Nexus 5X radio of the same M8994F line reached `2.6.42`. So:
+
+  - Replace **only** `modem.b*` and `modem.mdt` inside `/firmware/image`. Leave `adsp.*`, `qwlan30`,
+    `keymaster`, `widevine` and `cmnlib` alone -- they share that one vfat, and replacing the whole
+    partition is what the "unstable modem swap" reports on this device amount to.
+  - `/firmware` has roughly 8 MB free and a 2.6.42 modem set is about 2.5 MB larger than ours, so the
+    old `modem.*` has to be deleted before the new files are copied. That leaves a window with no
+    modem; recover with `fastboot flash modem` from a partition backup.
+  - Back up `modemst1`, `modemst2`, `fsg`, `fsc`, `modem` and `persist` first, hash-verified. The
+    first four are the modem's EFS and restoring them undoes any NV change.
+  - Signing is the open question. Our `modem.mdt` chains to `QualcommRootCa` via `SecTools Test User`
+    and is marked `DEBUG` -- a Qualcomm test-signed image, not an OEM-signed one. A production-fused
+    device rejects test-signed images, so this one booting suggests secure boot is not enforced for
+    the modem and a foreign (e.g. LGE-signed) image may load. Unverified: check the cert chain of any
+    donor and of the target handset before assuming.
+  - Do it on a spare handset. If the firmware does not authenticate the modem subsystem will not
+    start and the device has no cellular until restored, and a donor built for different RF hardware
+    can come up degraded rather than cleanly failing.
+
+Two EFS deltas are currently applied on the development handset and are inert: the
+`natt_keepalive_wifi_offload:TRUE;` line appended to `/data/iwlan_s2b_config.txt`, and
+`iwlan_s2b_mtu_val` created as 1280. Both are what T-Mobile's own MCFG carries. Revert by rewriting
+the file without the final line and unlinking the item (`forge/tools/diag-efs.sh`).
+
 *CNE is not the gate.* `libcne.so` carries the iWLAN preference itself (`CneFeatureCache::setIwlanUserPref`,
 `"ePDG preference: %d"`) driven by `persist.vendor.cnd.iwlan`, which is already `true`. There is no HIDL
 entry point for it, so nothing on the AOSP side is missing a call.
