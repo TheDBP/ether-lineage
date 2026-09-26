@@ -7,7 +7,7 @@ the `main` branch of [ether-trees](https://github.com/TheDBP/ether-trees)), and 
 is new.
 
 **It boots and works.** WiFi, Bluetooth, camera, audio, adb, LTE data, SMS and visual voicemail all
-function. No VoLTE — see *Known issues* for what is still open.
+function. No VoLTE on this branch — it works on `lineage-20.0-volte`; see *Known issues*.
 
 ## What this build actually changes
 
@@ -109,9 +109,9 @@ Beyond the tuning, this build restores or adds:
 | LEDs | rear cluster: notification pulse, charge gauge, boot chase |
 | LiveDisplay | colour calibration works; monochrome mode has no visible effect |
 | adb | USB (wireless via Developer options, as stock) |
-| Cellular | LTE data, SMS, visual voicemail (T-Mobile US); no VoLTE or Wi-Fi calling — see *Known issues* |
+| Cellular | LTE data, SMS, visual voicemail (T-Mobile US); no VoLTE or Wi-Fi calling on this branch — see *Known issues* |
 
-Branches: `lineage-20.0` (this, released), `lineage-20.0-volte` (VoLTE plan and inventory, `VOLTE.md`),
+Branches: `lineage-20.0` (this, released), `lineage-20.0-volte` (VoLTE working, `VOLTE-BRINGUP.md`),
 `lineage-21.0` (in progress), `main` (landing page). This repo's own `lineage-18.1` and
 `lineage-19.1` attempts were never finished and are gone; nothing in them is coming forward.
 
@@ -136,12 +136,15 @@ Full account in **[PORT-LOG.md](PORT-LOG.md)**.
 
 ## Known issues
 
-- **No VoLTE, no Wi-Fi calling.** LTE data, SMS and visual voicemail work; voice needs 2G/3G
-  fallback, which T-Mobile and AT&T no longer provide. The modem has an IMS stack and a T-Mobile
-  config, and the stock 7.1.1 zip ships the QTI IMS userspace (`org.codeaurora.ims`, `ims*daemon`,
-  `lib-ims*`), but that ImsService is the pre-Android-9 `ServiceManager("ims")` kind, which 13
-  has no binding path for. Plan in `VOLTE.md` on branch `lineage-20.0-volte`.
-- **Flashlight does not work.** The torch toggle has no effect. Not yet diagnosed.
+- **No VoLTE, no Wi-Fi calling on this branch.** Not backported here. VoLTE works on
+  `lineage-20.0-volte`: the stock 7.1.1 QTI IMS userspace exposes the pre-Android-9
+  `ServiceManager("ims")` ImsService, which 13 has no binding path for, so that branch adds a bridge
+  presenting a modern `ImsService` and delegating to it. Wi-Fi calling does not work there either and
+  cannot — the modem acknowledges the enable and never attempts an ePDG tunnel, and a newer modem
+  build will not load. See `VOLTE-BRINGUP.md` on that branch.
+- **Flashlight does not work on this branch.** Fixed on `lineage-20.0-volte` (`FLASHLIGHT.md`): the
+  LED is a TI LM3646 on CCI, not the PMIC block the tile was driving, and its I/O rail is owned by
+  the rear camera sensor.
 - **`CNEService` crashes on every Wi-Fi/mobile transition.** Android 7 blob calling
   `INetworkPolicyManager.getNetworkQuotaInfo`, removed in 12. Restarts itself; nothing depends on it.
   Fix: drop the APK from `proprietary-files.txt`, keep `cnd`.
