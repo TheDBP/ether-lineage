@@ -22,10 +22,10 @@ device default to bind even once it exists.
  2 files changed, 17 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index 00a4ec9..af1dfbd 100644
+index 3e5b4fc..6a5faff 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -360,6 +360,18 @@ endif
+@@ -364,6 +364,18 @@ endif
  # must stop. Shipping a ROM whose VoLTE is quietly absent is the failure this whole block exists to
  # prevent.
  include vendor/ims-blobs/ims-blobs.mk

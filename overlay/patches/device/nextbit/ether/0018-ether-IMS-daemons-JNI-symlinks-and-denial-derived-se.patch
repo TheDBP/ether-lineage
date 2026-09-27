@@ -61,10 +61,10 @@ index b5e39d7..1983362 100644
 +
  endif
 diff --git a/device.mk b/device.mk
-index 7d47f14..00a4ec9 100644
+index db1923d..3e5b4fc 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -335,6 +335,31 @@ endif
+@@ -339,6 +339,31 @@ endif
  # this makefile, so the test below ran against an empty value and every WITH_OEM build silently fell
  # through to the skin's. -include, so a build without the pack staged is still fine.
  -include vendor/extra/oem-assets/assets-vars.mk

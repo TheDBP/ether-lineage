@@ -1,7 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Sun, 13 Sep 2026 16:05:55 -0400
+Date: Sun, 27 Sep 2026 17:14:56 -0400
 Subject: [PATCH] ether: stop mm-pp-daemon spinning a core on an uninitialised
+ poll fd
+
+ poll fd
+
  poll fd
 
 The Qualcomm post-processing daemon waits on two descriptors and initialises only one. Slot 0 keeps
@@ -28,42 +32,42 @@ DT_NEEDED and libc is already ahead of it in the lookup order. -Wl,-z,global set
 puts the shim in the linker's global group; that group is searched before a soinfo's local group,
 so our poll() wins. Attached to libdisp-aba.so, the daemon's first DT_NEEDED entry.
 ---
- BoardConfig.mk               |   3 +-
- device.mk                    |   3 +-
+ BoardConfig.mk               |   3 +
+ device.mk                    |   3 +
  libshims/Android.mk          |  16 +++++
  libshims/ppd_poll/ppd_poll.c | 121 +++++++++++++++++++++++++++++++++++
  rootdir/init.target.rc       |   4 ++
- 5 files changed, 145 insertions(+), 2 deletions(-)
+ 5 files changed, 147 insertions(+)
  create mode 100644 libshims/ppd_poll/ppd_poll.c
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index bf19119..61eec0d 100644
+index bf19119..1cfaa4c 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
-@@ -161,7 +161,8 @@ BOARD_SEPOLICY_DIRS += \
- TARGET_LD_SHIM_LIBS := \
-     /system/vendor/lib64/libril-qc-qmi-1.so|libaudioclient_shim.so \
+@@ -163,6 +163,9 @@ TARGET_LD_SHIM_LIBS := \
      /system/vendor/lib64/libril-qc-qmi-1.so|libshims_peripheral_client.so \
--    /system/vendor/lib64/libmm-abl.so|libshims_powermanager.so
-+    /system/vendor/lib64/libmm-abl.so|libshims_powermanager.so \
-+    /system/vendor/lib64/libdisp-aba.so|libshims_ppd_poll.so
+     /system/vendor/lib64/libmm-abl.so|libshims_powermanager.so
  
++TARGET_LD_SHIM_LIBS += \
++    /system/vendor/lib64/libdisp-aba.so|libshims_ppd_poll.so
++
  # WiFi
  BOARD_HAS_QCOM_WLAN              := true
+ BOARD_HOSTAPD_DRIVER             := NL80211
 diff --git a/device.mk b/device.mk
-index ec57fd6..6560c74 100644
+index ec57fd6..546f497 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -171,7 +171,8 @@ PRODUCT_PACKAGES += \
- 
- # LiveDisplay
+@@ -173,6 +173,9 @@ PRODUCT_PACKAGES += \
  PRODUCT_PACKAGES += \
--    libshims_powermanager
-+    libshims_powermanager \
-+    libshims_ppd_poll
+     libshims_powermanager
  
++PRODUCT_PACKAGES += \
++    libshims_ppd_poll
++
  PRODUCT_PACKAGES += \
      vendor.lineage.livedisplay@2.0-service-legacymm \
+     vendor.lineage.livedisplay@2.0-service-sysfs
 diff --git a/libshims/Android.mk b/libshims/Android.mk
 index d71aa0b..847d80f 100644
 --- a/libshims/Android.mk

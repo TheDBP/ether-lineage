@@ -34,10 +34,10 @@ first-boot default only; Settings > System > Buttons still wins for anyone who c
  create mode 100644 overlay/lineage-sdk/packages/LineageSettingsProvider/res/values/defaults.xml
 
 diff --git a/device.mk b/device.mk
-index b38fb03..617af76 100644
+index c428843..8d7319d 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -403,6 +403,17 @@ PRODUCT_PROPERTY_OVERRIDES += ro.telephony.block_binder_thread_on_incoming_calls
+@@ -407,6 +407,17 @@ PRODUCT_PROPERTY_OVERRIDES += ro.telephony.block_binder_thread_on_incoming_calls
  #   persist.radio.VT_CAM_INTERFACE -- video telephony is deliberately off (config_device_vt_available).
  PRODUCT_PROPERTY_OVERRIDES += persist.data.iwlan.enable=true
  

@@ -1,7 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Sun, 13 Sep 2026 20:48:22 -0400
+Date: Sun, 27 Sep 2026 17:14:56 -0400
 Subject: [PATCH] ether: stop the camera daemon aborting on a double mutex
+ destroy
+
+ destroy
+
  destroy
 
 mm-qcamera-daemon dies tearing down an ISP session:
@@ -25,41 +29,41 @@ Scoped to the camera daemon through TARGET_LD_SHIM_LIBS, so nothing else loses t
 DF_1_GLOBAL for the same reason as libshims_ppd_poll: a shim arriving via DT_NEEDED sits behind libc
 in the lookup order and never gets called.
 ---
- BoardConfig.mk                       |  3 +-
- device.mk                            |  3 +-
+ BoardConfig.mk                       |  3 ++
+ device.mk                            |  3 ++
  libshims/Android.mk                  | 15 +++++++
  libshims/camera_mutex/camera_mutex.c | 62 ++++++++++++++++++++++++++++
- 4 files changed, 81 insertions(+), 2 deletions(-)
+ 4 files changed, 83 insertions(+)
  create mode 100644 libshims/camera_mutex/camera_mutex.c
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index 61eec0d..aac9a3a 100644
+index 1cfaa4c..eb94e97 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
-@@ -162,7 +162,8 @@ TARGET_LD_SHIM_LIBS := \
-     /system/vendor/lib64/libril-qc-qmi-1.so|libaudioclient_shim.so \
-     /system/vendor/lib64/libril-qc-qmi-1.so|libshims_peripheral_client.so \
-     /system/vendor/lib64/libmm-abl.so|libshims_powermanager.so \
--    /system/vendor/lib64/libdisp-aba.so|libshims_ppd_poll.so
-+    /system/vendor/lib64/libdisp-aba.so|libshims_ppd_poll.so \
-+    /system/vendor/lib/libmmcamera2_isp_modules.so|libshims_camera_mutex.so
+@@ -166,6 +166,9 @@ TARGET_LD_SHIM_LIBS := \
+ TARGET_LD_SHIM_LIBS += \
+     /system/vendor/lib64/libdisp-aba.so|libshims_ppd_poll.so
  
++TARGET_LD_SHIM_LIBS += \
++    /system/vendor/lib/libmmcamera2_isp_modules.so|libshims_camera_mutex.so
++
  # WiFi
  BOARD_HAS_QCOM_WLAN              := true
+ BOARD_HOSTAPD_DRIVER             := NL80211
 diff --git a/device.mk b/device.mk
-index 6560c74..7d47f14 100644
+index 546f497..db1923d 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -172,7 +172,8 @@ PRODUCT_PACKAGES += \
- # LiveDisplay
+@@ -176,6 +176,9 @@ PRODUCT_PACKAGES += \
  PRODUCT_PACKAGES += \
-     libshims_powermanager \
--    libshims_ppd_poll
-+    libshims_ppd_poll \
-+    libshims_camera_mutex
+     libshims_ppd_poll
  
++PRODUCT_PACKAGES += \
++    libshims_camera_mutex
++
  PRODUCT_PACKAGES += \
      vendor.lineage.livedisplay@2.0-service-legacymm \
+     vendor.lineage.livedisplay@2.0-service-sysfs
 diff --git a/libshims/Android.mk b/libshims/Android.mk
 index 847d80f..4d8c1f7 100644
 --- a/libshims/Android.mk

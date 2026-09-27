@@ -39,11 +39,11 @@ so the version is pinned to what this device's own stock ROM was built with.
  create mode 100644 nanopb-0.2.8/pb_encode.h
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index d01d91a..369c9e2 100644
+index 53cf72e..eb67f70 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
-@@ -166,6 +166,14 @@ TARGET_LD_SHIM_LIBS := \
-     /system/vendor/lib64/libdisp-aba.so|libshims_ppd_poll.so \
+@@ -170,6 +170,14 @@ TARGET_LD_SHIM_LIBS += \
+ TARGET_LD_SHIM_LIBS += \
      /system/vendor/lib/libmmcamera2_isp_modules.so|libshims_camera_mutex.so
  
 +# libril-qc-qmi-1.so imports pb_encode/pb_decode instead of carrying its own nanopb, and its
@@ -58,10 +58,10 @@ index d01d91a..369c9e2 100644
  BOARD_HAS_QCOM_WLAN              := true
  BOARD_HOSTAPD_DRIVER             := NL80211
 diff --git a/device.mk b/device.mk
-index af1dfbd..a139079 100644
+index 6a5faff..29fbc2b 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -369,6 +369,10 @@ PRODUCT_PACKAGES += ims
+@@ -373,6 +373,10 @@ PRODUCT_PACKAGES += ims
  # The bridge from that 7.1 IMS stack to the modern telephony framework. See VOLTE.md.
  PRODUCT_PACKAGES += ImsBridge
  

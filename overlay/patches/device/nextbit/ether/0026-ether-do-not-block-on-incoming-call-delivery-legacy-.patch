@@ -28,10 +28,10 @@ blocking the binder thread'.
  1 file changed, 18 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index 5a21982..d2d6d0f 100644
+index 2c68721..8bdec27 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -373,6 +373,24 @@ PRODUCT_PACKAGES += ImsBridge
+@@ -377,6 +377,24 @@ PRODUCT_PACKAGES += ImsBridge
  # VT natives can dlopen and ImsVideoGlobals.init() can run. See BoardConfig.mk TARGET_LD_SHIM_LIBS.
  PRODUCT_PACKAGES += libshim_vtsurface
  

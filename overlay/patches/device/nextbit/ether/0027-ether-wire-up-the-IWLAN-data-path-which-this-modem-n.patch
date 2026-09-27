@@ -24,10 +24,10 @@ account is VOLTE-BRINGUP.md section 8.
  1 file changed, 12 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index d2d6d0f..b38fb03 100644
+index 8bdec27..c428843 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -391,6 +391,18 @@ PRODUCT_PACKAGES += libshim_vtsurface
+@@ -395,6 +395,18 @@ PRODUCT_PACKAGES += libshim_vtsurface
  # want to avoid blocking the binder thread".
  PRODUCT_PROPERTY_OVERRIDES += ro.telephony.block_binder_thread_on_incoming_calls=false
  
