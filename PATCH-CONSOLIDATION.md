@@ -6,6 +6,12 @@ method is worth reusing.
 `check-patch-series.sh` reported **12 pairs** where a later patch undid an earlier one, across **38**
 device patches. It now reports **1**, across **35**.
 
+One of the original 12 was never real. `system/core` 0001 adds `"Mode": "0755",` to `cgroups.json` and
+0003 removes an identically worded line from `cgroups.recovery.json` -- different files, nothing undone.
+The checker was matching line bodies across a whole project instead of per file, and this plan recorded
+the result as work to do. Fixed in rom-forge; a pair now requires the same file, and the report names
+it. So the real count was 11, and 10 of them are gone.
+
 ## What was done
 
 | step | result |
@@ -44,8 +50,6 @@ Traps met, all of which produced a silently wrong patch rather than an error:
 
 ## Still open
 
-- **`system/core` 0003 undoes 0001** over one line (`"Mode": "0755"`). Out of scope: one line in
-  another project, worth folding if that project is being touched anyway.
 - **The full eight-family grouping.** Only 8 of 35 patches can move freely; the rest share `device.mk`
   (14 of them) or `BoardConfig.mk` (7), so moving them means retargeting context through most of the
   series. The families that could be formed were. Getting `0011` (modem bring-up) adjacent to the IMS
