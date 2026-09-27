@@ -26,6 +26,10 @@ Ether_Stock_ROM_*.zip
 archive/
 boot-logs*/
 diag/
+# How the work was done, as opposed to what the tree is. Useful to us, not to a reader of the repo.
+/PORT-LOG.md
+/VOLTE.md
+/PATCH-CONSOLIDATION.md
 
 # personal, per-checkout build settings (EXTRA_OPTIONS etc) -- never published
 /device.conf.local
