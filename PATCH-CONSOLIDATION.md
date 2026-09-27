@@ -2,6 +2,11 @@
 
 A plan, not a record. Delete this file once it has been carried out.
 
+**Progress: step 1 done (2026-09-27).** 38 patches -> 36, and `check-patch-series.sh` reports 6 pairs,
+down from 12 -- the six step 1 predicted. The replayed tree hashed identical to the one before the
+fold, so the collapse provably changed no behaviour. Revert point: tag
+`pre-patch-consolidation-20260927-1641`. Steps 2-4 remain.
+
 The device series is 38 patches and `check-patch-series.sh` reports 12 pairs where a later patch undoes
 an earlier one. That is not 12 bugs; it is the shape of work done in the order it was understood,
 preserved in a series that is replayed from scratch and therefore reads as the *description of a tree*
@@ -38,7 +43,7 @@ The same one that worked for the 37 -> 35 collapse, and the only one worth trust
 Do it in the order below. Each step is independently verifiable, so a bad one can be abandoned without
 unpicking the rest.
 
-## Step 1 — the capability-advertisement family (6 of the 12 pairs)
+## Step 1 — the capability-advertisement family (6 of the 12 pairs) — DONE
 
 `0004`, `0025`, `0026`(config half), `0035`, `0037` all argue about three booleans and which resource
 directory holds them. Traced in full:
@@ -54,9 +59,11 @@ the same minus the flip. Fold into **one** patch stating the end state: the thre
 in `values/config.xml`, plus the carrier legs in `vendor.xml`. Keep 0004's WPA supplicant half separate —
 it is unrelated and only shares a patch by accident of timing.
 
-While there, align `carrier_vt_available_bool`, which is still `true` in `vendor.xml` while
-`config_device_vt_available` is `false`. Harmless today because `ImsManager` ANDs them, but the carrier
-config claims a capability the device denies.
+`carrier_vt_available_bool` is still `true` in `vendor.xml` while `config_device_vt_available` is
+`false`. Harmless today because `ImsManager` ANDs them, but the carrier config claims a capability the
+device denies. This was **not** folded in: it changes the tree, and the fold's whole guarantee is that
+the tree is byte-identical. It needs its own commit, deliberately altering behaviour, and wants a boot
+test rather than a hash comparison. Still open.
 
 Removes pairs: 0025/0004, 0026/0004, 0035/0004, 0035/0025, 0035/0026, 0037/0004.
 
@@ -67,6 +74,11 @@ Neither is a fold; both are the reason folds look harder than they are.
 - **0026** ships the VT natives shim *and* turns video calling off. The shim belongs with the IMS
   infrastructure; the boolean belongs in step 1.
 - **0032** moves the volume panel *and* finishes the CNE property work. Unrelated subsystems.
+  (Now `0031` after step 1's renumbering.)
+- **0034** was a third, not spotted when this plan was written: it set the ACDB calibration paths *and*
+  appended the WFC-provisioning comment to `vendor.xml`. Split during step 1 -- the comment went with
+  the capability patch, which now owns that file outright. Worth taking as a warning that "what does
+  this patch touch" is a more reliable question than "what is this patch called".
 
 ## Step 3 — the staged-development pairs
 
@@ -83,7 +95,7 @@ the series should say.
 - **0013 undoes 0012** — 0012 registers `libshims_ppd_poll`, 0013 changes that registration. Different
   subsystems otherwise (mm-pp-daemon vs the camera daemon), so do not squash the patches; move the
   final shim registration into 0012.
-- **0036 undoes 0022** — one line: 0022 wrote `setProvisionedValue` as pure delegation, 0036 captures
+- **0034 undoes 0022** (was 0036/0022) — one line: 0022 wrote `setProvisionedValue` as pure delegation, 0036 captures
   the return code to log refusals. Acceptable as-is. A later patch refining a method an earlier one
   created is the mildest form of this and folding a diagnostic into the bridging patch would muddy
   both. Leave it, and leave the note saying why.
@@ -113,5 +125,5 @@ that project is being touched anyway, not as its own exercise.
 
 ## Target
 
-12 pairs down to 1 (0036/0022, deliberately kept). 38 patches down to roughly 33, none of which
+12 pairs down to 1 (the 0022 delegation pair, deliberately kept). 38 patches down to roughly 33, none of which
 contradicts another, and related work adjacent.

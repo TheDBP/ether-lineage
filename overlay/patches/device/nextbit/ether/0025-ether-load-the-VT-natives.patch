@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
 Date: Thu, 24 Sep 2026 13:20:53 -0400
-Subject: [PATCH] ether: load the VT natives, and switch video calling off
+Subject: [PATCH] ether: load the VT natives
 
 libimsmedia_jni.so imports android::Surface::Surface(sp<IGraphicBufferProducer> const&, bool). Android
 13 has only the three-argument form, so the symbol resolves nowhere, ImsMedia's static initialiser
@@ -19,24 +19,20 @@ platform's own libandroid_runtime.so. Without that rewrite the shim overruns the
 Symbol analysis with rom-forge/tools/abi-gap.sh: the JNI layer needs exactly this one symbol, and
 libimscamera_jni.so needs none.
 
-Video calling is switched off at the same time, and not because it is untested. lib-imsvt.so, the
+The shim exists only so init() can run. Video calling itself is not coming back: lib-imsvt.so, the
 actual VT engine, imports IOMXObserver and IGraphicBufferAlloc, platform interfaces deleted outright
-when OMX moved to HIDL/Codec2, along with 59 others: 61 unresolved symbols that cannot be shimmed
-because the subsystems behind them no longer exist. It is not in the startup path (nothing links it,
-and the Java side loads only imsmedia_jni/imscamera_jni), so the shim is enough to let init() run,
-but video itself is not coming back. config_device_vt_available goes false in both MNC overlays,
-which is the device leg isVtEnabledByPlatform() ANDs with the carrier config: that removes the
-Carrier video calling toggle and stops the framework ever asking the vendor stack for VT.
+when OMX moved to HIDL/Codec2, along with 59 others -- 61 unresolved symbols that cannot be shimmed
+because the subsystems behind them no longer exist. It is not in the startup path: nothing links it,
+and the Java side loads only imsmedia_jni/imscamera_jni. The device capability boolean that turns
+video calling off is set with the other IMS capability booleans, in the patch that advertises them.
 
 The three smali rewrites in rebuild-app.sh stay as belt and braces. They only disable video paths.
 ---
- BoardConfig.mk                                |  8 ++++
- device.mk                                     |  4 ++
- libshims/Android.mk                           | 10 +++++
- libshims/vtsurface_shim.cpp                   | 41 +++++++++++++++++++
- .../res/res/values-mcc310-mnc240/config.xml   |  9 +++-
- .../res/res/values-mcc310-mnc260/config.xml   |  9 +++-
- 6 files changed, 79 insertions(+), 2 deletions(-)
+ BoardConfig.mk              |  8 ++++++++
+ device.mk                   |  4 ++++
+ libshims/Android.mk         | 10 +++++++++
+ libshims/vtsurface_shim.cpp | 41 +++++++++++++++++++++++++++++++++++++
+ 4 files changed, 63 insertions(+)
  create mode 100644 libshims/vtsurface_shim.cpp
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
@@ -138,43 +134,3 @@ index 0000000..5e9ad2d
 +        bool controlledByApp) {
 +    new (self) android::Surface(bufferProducer, controlledByApp);
 +}
-diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
-index 9658dd3..60ee34b 100644
---- a/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
-+++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc240/config.xml
-@@ -15,7 +15,14 @@
-      Keep this file in step with values-mcc310-mnc260/config.xml. -->
- <resources>
-     <bool name="config_device_volte_available">true</bool>
--    <bool name="config_device_vt_available">true</bool>
-+    <!-- Video calling is off deliberately, not merely untested. The VT engine lib-imsvt.so
-+         imports IOMXObserver and IGraphicBufferAlloc, platform interfaces Android deleted outright
-+         when OMX moved to HIDL/Codec2: 61 unresolved symbols, and not shimmable. libshim_vtsurface
-+         only gets the JNI layer loading so ImsVideoGlobals.init() can create its singletons; it
-+         does not make video work. isVtEnabledByPlatform() ANDs this with the carrier's
-+         KEY_CARRIER_VT_AVAILABLE_BOOL, so false here removes the Carrier video calling toggle and
-+         stops the framework ever requesting a VT capability. -->
-+    <bool name="config_device_vt_available">false</bool>
-     <bool name="config_device_wfc_ims_available">true</bool>
-     <!-- legacy leg some code paths still consult -->
-     <bool name="config_carrier_volte_available">true</bool>
-diff --git a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
-index 7cbbfb1..602887b 100644
---- a/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
-+++ b/overlay/frameworks/base/core/res/res/values-mcc310-mnc260/config.xml
-@@ -11,7 +11,14 @@
-      here). Paired with the T-Mobile-filtered CarrierConfig bundle in the CarrierConfig overlay. -->
- <resources>
-     <bool name="config_device_volte_available">true</bool>
--    <bool name="config_device_vt_available">true</bool>
-+    <!-- Video calling is off deliberately, not merely untested. The VT engine lib-imsvt.so
-+         imports IOMXObserver and IGraphicBufferAlloc, platform interfaces Android deleted outright
-+         when OMX moved to HIDL/Codec2: 61 unresolved symbols, and not shimmable. libshim_vtsurface
-+         only gets the JNI layer loading so ImsVideoGlobals.init() can create its singletons; it
-+         does not make video work. isVtEnabledByPlatform() ANDs this with the carrier's
-+         KEY_CARRIER_VT_AVAILABLE_BOOL, so false here removes the Carrier video calling toggle and
-+         stops the framework ever requesting a VT capability. -->
-+    <bool name="config_device_vt_available">false</bool>
-     <bool name="config_device_wfc_ims_available">true</bool>
-     <!-- legacy leg some code paths still consult -->
-     <bool name="config_carrier_volte_available">true</bool>
