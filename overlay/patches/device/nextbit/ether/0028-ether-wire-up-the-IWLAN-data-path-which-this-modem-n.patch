@@ -24,7 +24,7 @@ account is VOLTE-BRINGUP.md section 8.
  1 file changed, 12 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index 8bdec27..c428843 100644
+index 631c90f..1a67cc5 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -395,6 +395,18 @@ PRODUCT_PACKAGES += libshim_vtsurface

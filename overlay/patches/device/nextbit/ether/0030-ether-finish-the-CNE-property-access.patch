@@ -21,7 +21,7 @@ Worth setting only now that CNE can read that property space at all.
  2 files changed, 20 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index c428843..8d7319d 100644
+index 1a67cc5..a30bbbb 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -407,6 +407,17 @@ PRODUCT_PROPERTY_OVERRIDES += ro.telephony.block_binder_thread_on_incoming_calls
@@ -30,10 +30,10 @@ index c428843..8d7319d 100644
  
 +# CNE's own IWLAN switch, read by libcne alongside persist.cne.feature. Left unset by this port and
 +# by stock. It is only worth setting now that sepolicy lets CNE read that property space at all --
-+# before device 0031 the daemon could not see any persist.cne.*/persist.vendor.cnd.* name, so this
-+# would have been another property set and never read.
++# before the property labelling patch the daemon could not see any persist.cne.* or
++# persist.vendor.cnd.* name at all, so this would have been another property set and never read.
 +#
-+# The measured effect of 0031 was CNE going from "pref data tech UNKNOWN" to "pref data tech LTE".
++# The measured effect of that patch was CNE going from "pref data tech UNKNOWN" to "pref tech LTE".
 +# IWLAN still does not appear among the candidates it prepares, and this is the switch named for it.
 +# persist.vendor.cnd.wqe is the other one libcne reads and is deliberately not set yet: one at a
 +# time, so a change in the candidate list has a single cause.

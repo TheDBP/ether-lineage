@@ -55,11 +55,11 @@ index eb67f70..f43d707 100644
  BOARD_HAS_QCOM_WLAN              := true
  BOARD_HOSTAPD_DRIVER             := NL80211
 diff --git a/device.mk b/device.mk
-index 29fbc2b..2c68721 100644
+index 4614503..be7e1db 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -373,6 +373,10 @@ PRODUCT_PACKAGES += ims
- # The bridge from that 7.1 IMS stack to the modern telephony framework. See VOLTE.md.
+ # The bridge from that 7.1 IMS stack to the modern telephony framework. See VOLTE-BRINGUP.md.
  PRODUCT_PACKAGES += ImsBridge
  
 +# Supplies the 7.1 two-argument android::Surface constructor that libimsmedia_jni.so imports, so the

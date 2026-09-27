@@ -28,7 +28,7 @@ blocking the binder thread'.
  1 file changed, 18 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index 2c68721..8bdec27 100644
+index be7e1db..631c90f 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -377,6 +377,24 @@ PRODUCT_PACKAGES += ImsBridge

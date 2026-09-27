@@ -25,6 +25,10 @@ symbols, platform interfaces deleted outright when OMX moved to HIDL/Codec2, so 
 shimmed back. False removes the carrier video-calling toggle and stops the framework requesting a VT
 capability at all.
 
+The carrier leg says the same: carrier_vt_available_bool is false too. ImsManager ANDs the two, so
+true there was inert, but a carrier config advertising a capability the device denies is a trap for
+whoever reads it next.
+
 wfc false, because it cannot work on this hardware and not because it was not tried. The framework
 side is complete and the modem's EFS is provisioned for iWLAN as fully as a handset that sells the
 feature, but the modem never attempts an ePDG tunnel, and a later modem build cannot be loaded: it
@@ -125,7 +129,7 @@ index b58855e..1b90e6c 100644
  </resources>
 diff --git a/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml b/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
 new file mode 100644
-index 0000000..8d49ddc
+index 0000000..e3b221a
 --- /dev/null
 +++ b/overlay/packages/apps/CarrierConfig/res/xml/vendor.xml
 @@ -0,0 +1,35 @@
@@ -141,7 +145,7 @@ index 0000000..8d49ddc
 +<carrier_config_list>
 +    <carrier_config mcc="310" mnc="260">
 +        <boolean name="carrier_volte_available_bool" value="true" />
-+        <boolean name="carrier_vt_available_bool" value="true" />
++        <boolean name="carrier_vt_available_bool" value="false" />
 +        <boolean name="carrier_wfc_ims_available_bool" value="false" />
 +        <boolean name="enhanced_4g_lte_on_by_default_bool" value="true" />
 +        <boolean name="editable_enhanced_4g_lte_bool" value="true" />

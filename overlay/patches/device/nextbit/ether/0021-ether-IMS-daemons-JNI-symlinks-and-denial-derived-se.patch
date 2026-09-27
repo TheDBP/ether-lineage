@@ -61,7 +61,7 @@ index b5e39d7..1983362 100644
 +
  endif
 diff --git a/device.mk b/device.mk
-index db1923d..3e5b4fc 100644
+index db1923d..aebacc8 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -339,6 +339,31 @@ endif
@@ -84,7 +84,7 @@ index db1923d..3e5b4fc 100644
 +  _ether_stock := $(firstword $(wildcard /repo/Ether_Stock_ROM_*.zip) $(wildcard $(LOCAL_PATH)/../../../../Ether_Stock_ROM_*.zip))
 +  ifeq ($(_ether_stock),)
 +    $(error ether: no Ether_Stock_ROM_*.zip found, so the IMS blobs cannot be staged. Put the stock \
-+ROM in the device repo root, or see VOLTE.md. Refusing to build a ROM that silently lacks VoLTE.)
++ROM in the device repo root, or see VOLTE-BRINGUP.md. Refusing to build a ROM lacking VoLTE.)
 +  endif
 +  $(info ether: staging IMS blobs from $(notdir $(_ether_stock)) -- first build only, ~2 min)
 +  $(info $(shell $(dir $(_ether_stock))extract-ims-blobs.sh $(_ether_stock) . 2>&1 | tail -4))

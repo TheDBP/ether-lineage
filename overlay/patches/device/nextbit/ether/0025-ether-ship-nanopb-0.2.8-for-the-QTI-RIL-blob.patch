@@ -58,11 +58,11 @@ index 53cf72e..eb67f70 100644
  BOARD_HAS_QCOM_WLAN              := true
  BOARD_HOSTAPD_DRIVER             := NL80211
 diff --git a/device.mk b/device.mk
-index 6a5faff..29fbc2b 100644
+index 0dbe388..4614503 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -373,6 +373,10 @@ PRODUCT_PACKAGES += ims
- # The bridge from that 7.1 IMS stack to the modern telephony framework. See VOLTE.md.
+ # The bridge from that 7.1 IMS stack to the modern telephony framework. See VOLTE-BRINGUP.md.
  PRODUCT_PACKAGES += ImsBridge
  
 +# nanopb 0.2.8, for libril-qc-qmi-1.so alone. See nanopb-0.2.8/Android.bp for why a second copy of
