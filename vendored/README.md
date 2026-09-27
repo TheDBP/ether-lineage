@@ -14,7 +14,7 @@ and per-SoC dirs **including `msm8992` and `msm8994`**. LineageOS's own
 
 Pinning the wrong repo at `device/qcom/sepolicy-legacy` is what caused this port to spend days
 restoring ~30 SELinux types, six domains, four te_macros and their labels by hand. All of it is here
-already, correct and complete. See PORT-LOG.md.
+already, correct and complete.
 
 Copied in rather than fetched: the GitLab group is gone, and SWH is the only remaining source.
 

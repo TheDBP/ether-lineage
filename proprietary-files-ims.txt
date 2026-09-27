@@ -1,7 +1,7 @@
 ## IMS / VoLTE blobs, from ether-user-7.1.1-Robin_Nougat_108-00WW_Jenkins_108-release-keys
 ##
 ## Not in the TheMuppets ether list: upstream drops the QTI IMS userspace because LineageOS
-## disabled the pre-P IMS stack (bullhead 5cef16f). Kept here for the VoLTE work -- see VOLTE.md.
+## disabled the pre-P IMS stack (bullhead 5cef16f). Kept here for VoLTE -- see VOLTE-BRINGUP.md.
 ## The QMI/RIL transport these talk to (libqmi*, libril-qc-qmi-1.so) is already in
 ## proprietary-files.txt and is NOT repeated here.
 ##
@@ -85,7 +85,7 @@ vendor/lib/librilqmiservices.so
 etc/diag_ims.cfg
 etc/permissions/qcrilhook.xml
 
-# ---- deferred to steps 1-3 (see VOLTE.md): dex-stripped apps and 7.1 boot-image artifacts ----
+# ---- not shipped: dex-stripped apps and 7.1 boot-image artifacts (see VOLTE-BRINGUP.md) ----
 #priv-app/qcrilmsgtunnel/oat/arm64/qcrilmsgtunnel.odex
 #priv-app/qcrilmsgtunnel/qcrilmsgtunnel.apk
 #vendor/app/ims/ims.apk

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deodex-app.sh — rebuild a dex-stripped stock app into editable smali, and report what framework
-# surface it needs. Step 1 of the VoLTE / VoWiFi plan in VOLTE.md.
+# surface it needs. See VOLTE-BRINGUP.md.
 #
 #   deodex-app.sh <stock-rom.zip> <workdir> <ims|cne>
 #

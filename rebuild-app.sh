@@ -236,7 +236,7 @@ PYIN
   # no low-battery video downgrade. Force the early return.
   #
   # NOTE: this is the FOURTH place dropping init() has surfaced. If a fifth appears, stop patching
-  # call sites and do the Surface shim instead so init() can run -- see VOLTE.md, "VT ABI".
+  # call sites and do the Surface shim instead so init() can run -- see VOLTE-BRINGUP.md.
   echo ">> forcing maybeUpdateLowBatteryStatus to no-op (LowBatteryHandler is never initialised)"
   python3 - "$h" <<'PYIN'
 import io, sys

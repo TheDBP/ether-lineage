@@ -111,9 +111,10 @@ Beyond the tuning, this build restores or adds:
 | adb | USB (wireless via Developer options, as stock) |
 | Cellular | LTE data, SMS, visual voicemail, VoLTE (verified on T-Mobile US); no Wi-Fi calling or video calling — see *Known issues* |
 
-Branches: `lineage-20.0` (this, released), `lineage-20.0-volte` (VoLTE working; see `VOLTE-BRINGUP.md`),
-`lineage-21.0` (in progress), `main` (landing page). This repo's own `lineage-18.1` and
-`lineage-19.1` attempts were never finished and are gone; nothing in them is coming forward.
+Branches: `lineage-20.0-volte` (this one; VoLTE works, see `VOLTE-BRINGUP.md`), `lineage-20.0`
+(released, no VoLTE), `lineage-21.0` (in progress), `main` (landing page). This repo's own
+`lineage-18.1` and `lineage-19.1` attempts were never finished and are gone; nothing in them is
+coming forward.
 
 **20.0 ships first; 21 follows straight after, and 21 is the end of the line.** LineageOS 22 needs a
 kernel of at least 4.19 (`NetBpfLoad` exits on anything older) and the Robin's is 3.10. The scoping
@@ -132,7 +133,6 @@ Android 13 assumes a kernel far newer than 3.10, and each assumption failed diff
 | FunctionFS AIO | Linux 3.15 | USB adb impossible |
 | RT bandwidth per cgroup | — | `SCHED_FIFO` unavailable system-wide; Bluetooth aborted |
 
-Full account in **[PORT-LOG.md](PORT-LOG.md)**.
 
 ## Known issues
 
@@ -654,7 +654,6 @@ below: what broke → what the patch does → what it costs.
 | `overlay/local_manifests/` | extra projects the manifest does not carry |
 | `vendored/` | trees whose upstreams are deleted, recovered from Software Heritage: the 19.1 device tree the patches apply to, and the pre-rename qcom `sepolicy-legacy` — see `vendored/README.md` |
 | `forge/` | the shared build engine, vendored (do not edit here) |
-| `PORT-LOG.md` | how the port was done and what was measured |
 
 The upstream trees this port depends on that are at risk of disappearing are kept at
 [ether-trees](https://github.com/TheDBP/ether-trees): the 18.1 kernel, device tree and CAF HALs

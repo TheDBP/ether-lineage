@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# verify-volte-plan.sh — check every factual claim in VOLTE.md against the tree, the stock blobs and
+# verify-volte.sh — check the VoLTE stack against the tree, the stock blobs and
 # the bullhead reference. Prints PASS/FAIL per claim; exits non-zero if any fails.
 #
-#   ./verify-volte-plan.sh [--inventory DIR] [--bullhead DIR]
+#   ./verify-volte.sh [--inventory DIR] [--bullhead DIR]
 #
-# Defaults assume the layout VOLTE.md describes: the extracted stock IMS blobs under
+# Defaults assume the layout VOLTE-BRINGUP.md describes: the extracted stock IMS blobs under
 # $BUILD_ROOT/tmp/ims-inventory, and device_lge_bullhead under a sibling upstream-reference/.
 #
 # A checker that cannot fail is worth nothing: this one was negative-tested by pointing it at
