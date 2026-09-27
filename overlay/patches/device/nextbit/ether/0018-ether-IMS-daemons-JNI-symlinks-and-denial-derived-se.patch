@@ -1,12 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: TheDBP <TheDBP@users.noreply.github.com>
-Date: Wed, 23 Sep 2026 15:43:59 -0400
+Date: Sun, 27 Sep 2026 17:06:00 -0400
 Subject: [PATCH] ether: IMS daemons, JNI symlinks and denial-derived sepolicy
  (VoLTE step 4)
 
 init.target.rc carries the four IMS services from ether's own stock ramdisk, with the two-stage
-property handshake. device.mk -includes vendor/ims-blobs/ims-blobs.mk. Android.mk symlinks the JNI
-libraries into vendor/app/ims/lib/arm64.
+property handshake. Android.mk symlinks the JNI libraries into vendor/app/ims/lib/arm64.
 
 sepolicy/ims_ether.te adds three rules, each from a denial seen on hardware rather than ported:
 net_raw for imsdatadaemon, get_prop(ims, default_prop) for both daemons, and -- the one that blocks
@@ -16,15 +15,25 @@ own trigger tests.
 Nothing is redeclared: device/qcom/sepolicy-legacy already owns the ims domain, its types and all
 four daemon labels, and a second declaration is a hard build failure.
 
+device.mk stages the IMS blobs and the rebuilt ims.apk out of the stock ROM at product-config time,
+rather than expecting someone to have run extract-ims-blobs.sh first. That prerequisite failed
+silently in the worst way: vendor/ims-blobs sits outside vendor/extra, so the overlay clear never
+touches it, and a tree where the script had been run once kept producing ROMs with IMS while a fresh
+clone produced ROMs without it and said nothing -- same command, same repo, different image. The
+blobs come from the user's own stock ROM and cannot be committed, so a wildcard guard runs the
+extraction once and every later build skips straight past it. The include is hard rather than
+-include on purpose: if staging did not produce the file the build must stop, because shipping a ROM
+whose VoLTE is quietly absent is the failure the whole block exists to prevent.
+
 Measured before this patch: imsqmidaemon runs, reaches the modem and sets QMI_DAEMON_STATUS=1, and
 the socket is created and correctly labelled -- the chain stalls only because init cannot read the
 property to fire stage two.
 ---
  Android.mk             | 15 +++++++++++++++
- device.mk              |  4 ++++
+ device.mk              | 25 +++++++++++++++++++++++++
  rootdir/init.target.rc | 38 ++++++++++++++++++++++++++++++++++++++
  sepolicy/ims_ether.te  | 26 ++++++++++++++++++++++++++
- 4 files changed, 83 insertions(+)
+ 4 files changed, 104 insertions(+)
  create mode 100644 sepolicy/ims_ether.te
 
 diff --git a/Android.mk b/Android.mk
@@ -52,17 +61,38 @@ index b5e39d7..1983362 100644
 +
  endif
 diff --git a/device.mk b/device.mk
-index 7d47f14..01cc2fb 100644
+index 7d47f14..00a4ec9 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -335,6 +335,10 @@ endif
+@@ -335,6 +335,31 @@ endif
  # this makefile, so the test below ran against an empty value and every WITH_OEM build silently fell
  # through to the skin's. -include, so a build without the pack staged is still fine.
  -include vendor/extra/oem-assets/assets-vars.mk
 +
-+# IMS / VoLTE blobs, staged out of the stock zip by extract-ims-blobs.sh. -include, because the
-+# file only exists when that script has run: a build without it is simply a build without IMS.
-+-include vendor/ims-blobs/ims-blobs.mk
++# IMS / VoLTE blobs and the rebuilt ims.apk, staged out of the stock ROM at product-config time.
++#
++# This used to be a hand-run step before the build, and that failed silently in the worst way:
++# vendor/ims-blobs sits outside vendor/extra, so the overlay clear never touches it. A tree where the
++# script had been run once kept producing ROMs with IMS, while a fresh clone produced ROMs without it
++# and said nothing -- same command, same repo, different image.
++#
++# The blobs come from the user's own stock ROM and cannot be committed, so staging them is part of
++# the build rather than a prerequisite to remember. The wildcard guard makes it run once; every later
++# build sees the .mk and skips straight past.
++ifeq ($(wildcard vendor/ims-blobs/ims-blobs.mk),)
++  # /repo is the device repo inside the build container; the second path is for a host-side build.
++  _ether_stock := $(firstword $(wildcard /repo/Ether_Stock_ROM_*.zip) $(wildcard $(LOCAL_PATH)/../../../../Ether_Stock_ROM_*.zip))
++  ifeq ($(_ether_stock),)
++    $(error ether: no Ether_Stock_ROM_*.zip found, so the IMS blobs cannot be staged. Put the stock \
++ROM in the device repo root, or see VOLTE.md. Refusing to build a ROM that silently lacks VoLTE.)
++  endif
++  $(info ether: staging IMS blobs from $(notdir $(_ether_stock)) -- first build only, ~2 min)
++  $(info $(shell $(dir $(_ether_stock))extract-ims-blobs.sh $(_ether_stock) . 2>&1 | tail -4))
++endif
++# Deliberately a hard include, not -include: if the staging above did not produce this file the build
++# must stop. Shipping a ROM whose VoLTE is quietly absent is the failure this whole block exists to
++# prevent.
++include vendor/ims-blobs/ims-blobs.mk
  ifeq ($(WITH_OEM),true)
  ifneq ($(OEM_DEFAULT_WALLPAPER),)
  ether_def_wallpaper := $(OEM_DEFAULT_WALLPAPER)

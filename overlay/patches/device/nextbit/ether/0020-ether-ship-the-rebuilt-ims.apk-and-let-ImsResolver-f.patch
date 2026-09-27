@@ -22,13 +22,13 @@ device default to bind even once it exists.
  2 files changed, 17 insertions(+)
 
 diff --git a/device.mk b/device.mk
-index 01cc2fb..9209271 100644
+index 00a4ec9..af1dfbd 100644
 --- a/device.mk
 +++ b/device.mk
-@@ -339,6 +339,18 @@ endif
- # IMS / VoLTE blobs, staged out of the stock zip by extract-ims-blobs.sh. -include, because the
- # file only exists when that script has run: a build without it is simply a build without IMS.
- -include vendor/ims-blobs/ims-blobs.mk
+@@ -360,6 +360,18 @@ endif
+ # must stop. Shipping a ROM whose VoLTE is quietly absent is the failure this whole block exists to
+ # prevent.
+ include vendor/ims-blobs/ims-blobs.mk
 +
 +# The rebuilt ims.apk, imported rather than copied: AOSP rejects APKs in PRODUCT_COPY_FILES, and
 +# this one must be signed with the platform key because it declares sharedUserId=android.uid.phone.
