@@ -42,10 +42,11 @@ def_=$(grep -cE '^#(vendor/app|priv-app|framework)/' "$R/proprietary-files-ims.t
 ck "C2b step-4 list has 53 active entries ($ent)"  "$([ "$ent" -eq 53 ] && echo 1 || echo 0)"
 ck "C2c 15 deferred to steps 1-3 ($def_)"          "$([ "$def_" -eq 15 ] && echo 1 || echo 0)"
 
-# C3 carrier config patch
-p=$(ls "$R"/overlay/patches/device/nextbit/ether/0004-*.patch 2>/dev/null | head -1)
+# C3 carrier config patch. Matched by slug, not number: the series gets renumbered whenever it is
+# regrouped, and a stale number here silently checks the wrong patch.
+p=$(ls "$R"/overlay/patches/device/nextbit/ether/*advertise-what-this-modem*.patch 2>/dev/null | head -1)
 n=$(grep -ciE 'mcc310|mnc260|volte|ims' "$p" 2>/dev/null || echo 0)
-ck "C3  device patch 0004 carries IMS/carrier config ($n lines)" "$([ -n "$p" ] && [ "$n" -ge 10 ] && echo 1 || echo 0)"
+ck "C3  the IMS capability patch carries the carrier config ($n lines)" "$([ -n "$p" ] && [ "$n" -ge 10 ] && echo 1 || echo 0)"
 
 # C4 pre-P shape
 m=$("$A" dump xmltree --file AndroidManifest.xml "$W/system/vendor/app/ims/ims.apk" 2>/dev/null)
@@ -80,11 +81,11 @@ ck "C10 Android.mk IMS_SYMLINKS"            "$(grep -q 'IMS_SYMLINKS' "$B/Androi
 
 
 # ---------------------------------------------------------------- step 4: the stack we built
-P18=$(ls "$R"/overlay/patches/device/nextbit/ether/0018-*.patch 2>/dev/null | head -1)
+P18=$(ls "$R"/overlay/patches/device/nextbit/ether/*IMS-daemons-JNI-symlinks*.patch 2>/dev/null | head -1)
 DT="$SRC/device/nextbit/ether"
 RC="$DT/rootdir/init.target.rc"
-ck "S1  patch 0018 exported (rc + mk only)"                 "$([ -n "$P18" ] && echo 1 || echo 0)"
-ck "S1b patch 0018 has no local paths"       "$([ -s "$P18" ] && ! grep -qE '/home/|/media/Storage|NBQGLMB' "$P18" 2>/dev/null && echo 1 || echo 0)"
+ck "S1  the IMS daemons patch exported (rc + mk only)"                 "$([ -n "$P18" ] && echo 1 || echo 0)"
+ck "S1b the IMS daemons patch has no local paths"       "$([ -s "$P18" ] && ! grep -qE '/home/|/media/Storage|NBQGLMB' "$P18" 2>/dev/null && echo 1 || echo 0)"
 
 # the four daemons, from ether's own stock init -- not bullhead's two
 for d in imsqmidaemon imsdatadaemon ims_rtp_daemon imscmservice; do
@@ -110,8 +111,8 @@ ck "S3g legacy grants set_prop(ims,...)"     "$(grep -q 'set_prop(ims, qcom_ims_
 ck "S4  device.mk includes vendor/ims-blobs/ims-blobs.mk" "$(grep -q 'include vendor/ims-blobs/ims-blobs.mk' "$DT/device.mk" 2>/dev/null && echo 1 || echo 0)"
 # the tree and the PATCH must agree: an unstaged tree edit is replayed over at the next build, which
 # is how the include kept pointing at vendor/extra while the tree looked right
-ck "S4a patch 0018 carries the same path"    "$([ -s "$P18" ] && grep -q '^+.*include vendor/ims-blobs/ims-blobs.mk' "$P18" 2>/dev/null && echo 1 || echo 0)"
-ck "S4b patch 0018 does NOT mention vendor/extra/ims-blobs" "$([ -s "$P18" ] && ! grep -q '^+.*vendor/extra/ims-blobs' "$P18" 2>/dev/null && echo 1 || echo 0)"
+ck "S4a the IMS daemons patch carries the same path"    "$([ -s "$P18" ] && grep -q '^+.*include vendor/ims-blobs/ims-blobs.mk' "$P18" 2>/dev/null && echo 1 || echo 0)"
+ck "S4b the IMS daemons patch does NOT mention vendor/extra/ims-blobs" "$([ -s "$P18" ] && ! grep -q '^+.*vendor/extra/ims-blobs' "$P18" 2>/dev/null && echo 1 || echo 0)"
 ck "S4c Android.mk symlinks the JNI libs"    "$(grep -q 'IMS_SYMLINKS' "$DT/Android.mk" 2>/dev/null && echo 1 || echo 0)"
 # a comment between a backslash line and its continuation silently breaks make and shell alike
 ck "S4d no comment inside a continuation"    "$([ -s "$RC" ] && [ -s "$DT/Android.mk" ] && [ -s "$DT/device.mk" ] && { for f in "$RC" "$DT/Android.mk" "$DT/device.mk"; do awk '/\\$/{p=1;next} p&&/^[[:space:]]*#/{print "x"} {p=0}' "$f" 2>/dev/null; done | grep -q x && echo 0 || echo 1; } || echo 0)"
