@@ -37,10 +37,10 @@ in the lookup order and never gets called.
  create mode 100644 libshims/camera_mutex/camera_mutex.c
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index 1cfaa4c..eb94e97 100644
+index d9e08ab..53cf72e 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
-@@ -166,6 +166,9 @@ TARGET_LD_SHIM_LIBS := \
+@@ -167,6 +167,9 @@ TARGET_LD_SHIM_LIBS := \
  TARGET_LD_SHIM_LIBS += \
      /system/vendor/lib64/libdisp-aba.so|libshims_ppd_poll.so
  

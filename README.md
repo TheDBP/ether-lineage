@@ -327,30 +327,35 @@ below: what broke → what the patch does → what it costs.
   policy: rild/qmuxd, netmgrd/wcnss_service property access, LiveDisplay → mm-pp-daemon, and their
   file/property contexts. Denials were silent (no modem, no LiveDisplay, no logs). vendor_init's
   rule is the compilable subset — the original named a type 20.0 lacks.
-- **0005 RobinLed — the rear cloud LED as a notification and battery indicator** — a
+- **0005 320 dpi** — the 5.2" 1080p panel is 424 dpi; upstream's 480 rendered a size too large.
+  320 is the bucket that buys usable width, and xxhdpi assets still apply.
+- **0006 `def_font_scale` 115% for the 320 dpi panel** — read by the SettingsProvider patch via
+  `loadFractionSetting`. 320 dpi buys 540 dp of width, which dense layouts need, at the cost of
+  physically small text on 5.2 inches.
+- **0007 RobinLed — the rear cloud LED as a notification and battery indicator** — a
   NotificationListener that pulses at a rate scaled to outstanding notifications and shows charge
   level; liblight gives the rear cluster up so there is one writer. The boot chase moves to a
   system rc because A13 drops vendor-rc triggers on `init.svc.bootanim`, and writes the resolved
   sysfs path because init cannot read the `sysfs_leds`-labelled link.
-- **0006 Firefox and F-Droid prebuilt modules, each on its own switch** — gated on the forge
+- **0008 Firefox and F-Droid prebuilt modules, each on its own switch** — gated on the forge
   option (`WITH_FIREFOX` / `WITH_FDROID`) and on the APK being present, so a stale APK never leaks
   into a build and a missing one never fails the parse. Firefox overrides Jelly; it is no longer
   tied to `WITH_GAPPS`.
-- **0007 default wallpaper via `ro.config.wallpaper`, OEM pack overrides it** — the property points
+- **0009 default wallpaper via `ro.config.wallpaper`, OEM pack overrides it** — the property points
   at whatever the wallpaper option staged, sidestepping the framework-res RRO not reaching first
   boot. No option: unset, upstream default. `WITH_OEM`: points at `OEM_DEFAULT_WALLPAPER`.
-- **0008 QS tile layout and RobinLed listener access** — NFC and LiveDisplay tiles in the default
+- **0010 QS tile layout and RobinLed listener access** — NFC and LiveDisplay tiles in the default
   QS layout (fresh install only); auto-granted listener access for `com.nextbit.robinled`. Accent
   overlay dropped (Monet preset via `teal-skin` instead); dead DeskClock widget override dropped;
   no theme default here (the forge's `dark-default` sets it in `frameworks/base`, and a device
   overlay would silently win).
-- **0009 drive the flashlight through the flash subdev, not the PMIC** — the torch never emitted light
+- **0011 drive the flashlight through the flash subdev, not the PMIC** — the torch never emitted light
   while every write succeeded and the tile reported on, because `QCameraFlash` was writing PMIC sysfs
   nodes that nothing on this board is wired to. Three stacked faults; full account in `FLASHLIGHT.md`.
-- **0010 volume panel by the keys** — the volume dialog moves to the left edge, offset −150 dp, so it
+- **0012 volume panel by the keys** — the volume dialog moves to the left edge, offset −150 dp, so it
   appears beside the physical keys rather than centred. The rocker sits at about 34% of screen height;
   −150 dp is a measured correction to a first fit of −180 dp. First-boot default only, Settings wins.
-- **0011 bring the modem up, and stop rild crashing on the way** — no working peripheral manager.
+- **0013 bring the modem up, and stop rild crashing on the way** — no working peripheral manager.
   (a) The 2016 `libperipheral_client.so` stack-allocates two `Parcel`s at 2016's `sizeof`; the
   current one is larger and the store hits the stack canary, so rild aborted on every start. A shim
   scoped to `libril-qc-qmi-1.so` returns failure from the five `pm_client_*` entry points, which the
@@ -358,55 +363,52 @@ below: what broke → what the patch does → what it costs.
   `subsystem_get("modem")`; `ether_modem_hold` (class core) opens and holds `/dev/subsys_modem`
   — rild cannot, it is uid radio and the node is 0640 system — so PIL loads the firmware and
   `smdcntl0`/qmux appear.
-- **0012 stop asking the JPEG encoder to rotate — it cannot** — `needJpegRotation()` returned true
+- **0014 stop asking the JPEG encoder to rotate — it cannot** — `needJpegRotation()` returned true
   unconditionally; the hardware encoder refused, the software fallback transposed the dimensions
   and banded the frame. Rotation is already covered by `CAM_QCOM_FEATURE_ROTATION` in the CPP.
-- **0013 stop mm-pp-daemon spinning a core on an uninitialised poll fd** — the daemon polls two
+- **0015 stop mm-pp-daemon spinning a core on an uninitialised poll fd** — the daemon polls two
   descriptors and initialises one; `POLLNVAL` returns at once, ~6700 calls/s, 98 % of a core from
   boot (stock has the same bug). Shim rewrites fds that `fcntl()` rejects with `EBADF` to -1.
   Injected via `TARGET_LD_SHIM_LIBS` on `libdisp-aba.so` with `-z global` so it precedes libc;
   `LD_PRELOAD` is ignored under `AT_SECURE` after the domain transition.
-- **0014 stop the camera daemon aborting on a double mutex destroy** — the ISP blob destroys a
+- **0016 stop the camera daemon aborting on a double mutex destroy** — the ISP blob destroys a
   mutex twice; A7 bionic returned an error, A13 bionic aborts (eight tombstones a boot). Shim
   scoped to `mm-qcamera-daemon` makes `pthread_mutex_destroy` a no-op — safe, the struct is
   caller-owned with nothing to leak. Cost: real mutex misuse in that one daemon goes unreported.
-- **0015 disable PMF so the WPA handshake can complete** — the framework asks for `RequirePmf=false`,
+- **0017 let the gatekeeper and composer HALs read the properties they poll** — gatekeeper reads a
+  `system_prop` at startup; denied, `IGatekeeper/default` never registers and `system_server` waits
+  forever (boot animation with no crash). The composer HAL polls the bootanim property; denied reads
+  spin at hundreds per second for the whole hang.
+- **0018 disable PMF so the WPA handshake can complete** — the framework asks for `RequirePmf=false`,
   but the AOSP template sets a global `pmf=1` and wpa_supplicant upgrades that to *required* whenever
   the AP advertises MFP. The prima/qcacld driver cannot do PMF, so msg 3/4 never arrives and the
   handshake times out — reported as "pre-shared key may be incorrect", which it is not. 19.1 worked
   because it used the HIDL supplicant HAL; 20.0's AIDL one does not pass `RequirePmf` through as
   `ieee80211w=0`. Cost: no WPA3-SAE, which this driver cannot do anyway.
-- **0016 let wcnss_filter hold a wakelock** — `/sys/power/wake_lock` needs `CAP_BLOCK_SUSPEND`;
+- **0019 let wcnss_filter hold a wakelock** — `/sys/power/wake_lock` needs `CAP_BLOCK_SUSPEND`;
   sepolicy allowed it, the rc never asked. Every acquire failed EPERM (~1/s) and BT traffic could
   not keep the SoC awake. `capabilities BLOCK_SUSPEND` on the service.
-- **0017 enumerate once when switching USB to adb** — `init.nbq.usb.rc` duplicated AOSP's
+- **0020 enumerate once when switching USB to adb** — `init.nbq.usb.rc` duplicated AOSP's
   `sys.usb.config=adb` block (configfs is 0 here), so every switch enumerated twice (18d1:4EE7 then
   2C3F:0009) with a full adbd transport tear-down between. Device copy removed; mtp/ptp/rndis/midi/
   diag stay, they have no AOSP counterpart.
-- **0018 320 dpi** — the 5.2" 1080p panel is 424 dpi; upstream's 480 rendered a size too large.
-  320 is the bucket that buys usable width, and xxhdpi assets still apply.
-- **0019 `def_font_scale` 115% for the 320 dpi panel** — read by the SettingsProvider patch via
-  `loadFractionSetting`. 320 dpi buys 540 dp of width, which dense layouts need, at the cost of
-  physically small text on 5.2 inches.
-- **0020 let the gatekeeper and composer HALs read the properties they poll** — gatekeeper reads a
-  `system_prop` at startup; denied, `IGatekeeper/default` never registers and `system_server` waits
-  forever (boot animation with no crash). The composer HAL polls the bootanim property; denied reads
-  spin at hundreds per second for the whole hang.
-
-- **0021 IMS daemons, JNI symlinks and denial-derived sepolicy** — `init.target.rc` carries the four
+- **0021 let the ACDB calibration paths be set** — `vendor_init` was refused `audio_prop`, so the
+  seven `persist.audio.calfile*` paths `init.qcom.rc` sets from this device's own ACDB data all read
+  back empty, and the audio HAL had been running on generic calibration since the port began.
+- **0022 IMS daemons, JNI symlinks and denial-derived sepolicy** — `init.target.rc` carries the four
   IMS services from ether's own stock ramdisk with the two-stage property handshake they expect, plus
   the sepolicy their denials asked for. `device.mk` also stages the IMS blobs from the stock ROM at
   product-config time rather than expecting someone to have run `extract-ims-blobs.sh`: that
   directory sits outside `vendor/extra` so the overlay clear never touches it, and a tree where the
   script had run kept producing ROMs with IMS while a fresh clone produced ROMs without and said
   nothing. A hard include means a build that could not stage them stops.
-- **0022 the 7.1 legacy IMS AIDL surface, generated and verified on the wire** — all fourteen legacy
+- **0023 the 7.1 legacy IMS AIDL surface, generated and verified on the wire** — all fourteen legacy
   interfaces, generated from the stock 7.1 binary rather than typed: `IImsCallSession` (28
   transactions), `IImsCallSessionListener` (30), `IImsUt` (18), `IImsVideoCallProvider` (11) and the
   rest — 148 in total, plus seven parcelables whose wire order is not their declaration order. AIDL
   numbers transactions by declaration order and the far end is compiled 2016 code, so the order is
   load-bearing; a verifier checks the *built* apk against the stock binary so a mistake cannot pass.
-- **0023 ImsBridge — bind the 7.1 `ims.apk` to the modern telephony stack** — `ims.apk` implements
+- **0024 ImsBridge — bind the 7.1 `ims.apk` to the modern telephony stack** — `ims.apk` implements
   `com.android.ims.internal.IImsService`, the pre-P binding Android 9 deleted.
   `frameworks/opt/telephony` still carries the compat path, so the bridge presents a modern
   `ImsService` and delegates to the legacy one, absorbing the shape difference that 7.1 is
@@ -414,49 +416,34 @@ below: what broke → what the patch does → what it costs.
   wrapper apiece: `CallSessionWrapper` delegates all 28 legacy call-session methods onto
   `ImsCallSessionImplBase`, whose no-op defaults cover everything 13 added (RTT, transfer, call
   quality) that 7.1 has no notion of, and `CallSessionListenerAdapter` carries the 30 callbacks back.
-- **0024 ship the rebuilt `ims.apk` and let ImsResolver find the bridge** — three things that do not
+- **0025 ship the rebuilt `ims.apk` and let ImsResolver find the bridge** — three things that do not
   work apart: the apk imported rather than copied (AOSP rejects APKs in `PRODUCT_COPY_FILES`), signed
   with the platform key because it declares `sharedUserId=android.uid.phone`, and the resolver config
   that points at the bridge.
-- **0025 ship nanopb 0.2.8 for the QTI RIL blob** — `libril-qc-qmi-1.so` imports
+- **0026 ship nanopb 0.2.8 for the QTI RIL blob** — `libril-qc-qmi-1.so` imports
   `pb_encode`/`pb_decode` rather than carrying its own nanopb, and its descriptors were generated
   against 0.2.8, the version 7.1.1 shipped. Modern nanopb inserted `PB_LTYPE_BOOL` and shifted every
   other `PB_LTYPE_*`, so a newer copy decodes every field as the wrong type.
-- **0026 load the VT natives** — `libimsmedia_jni.so` imports a two-argument
+- **0027 load the VT natives** — `libimsmedia_jni.so` imports a two-argument
   `android::Surface::Surface`; 13 has only the three-argument form, so the symbol resolves nowhere and
   ImsMedia's static initialiser takes the process down at `ImsService.onCreate`. A shim lets `init()`
   build its singletons. It is only safe because `extract-ims-blobs.sh` separately rewrites the blob's
   allocation — `sizeof(Surface)` grew 3560 → 8168 bytes. Video calling itself is not coming back: 61
   unresolved symbols against subsystems that no longer exist. The boolean that turns it off is set
-  with the other capability booleans, in 0034.
-- **0027 do not block on incoming-call delivery (legacy IMS deadlocks the main thread)** —
+  with the other capability booleans, in 0031.
+- **0028 do not block on incoming-call delivery (legacy IMS deadlocks the main thread)** —
   `ImsPhoneCallTracker.onIncomingCall` defaults to `executeAndWait()`, i.e.
   `CompletableFuture.runAsync(task, mExecutor).join()`, which deadlocks against the legacy bridge's
   binder thread and loses the call.
-- **0028 wire up the IWLAN data path, which this modem never uses** — kept for the record rather than
+- **0029 wire up the IWLAN data path, which this modem never uses** — kept for the record rather than
   because it works: the modem stores and acknowledges the configuration (`wifi_call: 2`) and never
-  registers an ePDG. 0034 is what actually turns the feature off; the full account is
+  registers an ePDG. 0031 is what actually turns the feature off; the full account is
   `VOLTE-BRINGUP.md` §8.
-- **0029 let the Connectivity Engine read its own configuration** — CNE tells the RIL which data
-  technology to prefer and is the only path by which IWLAN becomes a candidate at all. It could not
-  read one of its own `persist.cne.*` properties; the measured result was `pref data tech` moving from
-  `UNKNOWN` to `LTE`.
-- **0030 finish the CNE property access** — `CNEService` reads the same properties `cnd` does, and
-  giving them their own type moved them out of its reach too, so the framework half of CNE lost access
-  that relabelling was never meant to take. Same rule, same type. The app is hosted in the
-  `.dataservices` process, which is why it does not show up as "cne" in `ps` and is easy to believe
-  dead. `persist.vendor.cnd.iwlan` is set here, worth doing only now that CNE can read that space.
-- **0031 label the properties fifteen denials were actually asking for** — fifteen avc denials on
-  property reads across ten domains. A denial names the domain and the type but never the property, so
-  it read as fifteen separate bugs; labelling the prefixes fixed them as one.
-- **0032 let the ACDB calibration paths be set** — `vendor_init` was refused `audio_prop`, so the
-  seven `persist.audio.calfile*` paths `init.qcom.rc` sets from this device's own ACDB data all read
-  back empty, and the audio HAL had been running on generic calibration since the port began.
-- **0033 read back what the vendor IMS config will actually admit** — the vendor `ImsConfigImpl`
+- **0030 read back what the vendor IMS config will actually admit** — the vendor `ImsConfigImpl`
   validates every item against a fixed set and refuses everything else as "Invalid API request for
   item". A sweep behind `persist.ether.ims.configprobe` reads every item, and a refused
   `setProvisionedValue` is now logged instead of reading as a completed set.
-- **0034 advertise what this modem can actually do over IMS** — the three device-capability booleans,
+- **0031 advertise what this modem can actually do over IMS** — the three device-capability booleans,
   the per-carrier legs, and the CarrierConfig bundle, in one patch because they are one decision
   expressed in four files. The device leg is unqualified and deliberately not under an `mcc`/`mnc`
   directory: `isVolteEnabledByPlatform()` ANDs it with the carrier leg, so qualifying it by carrier
@@ -465,6 +452,18 @@ below: what broke → what the patch does → what it costs.
   directories carry only genuinely per-carrier values. volte true; vt false, because `lib-imsvt.so`
   cannot be shimmed back; wfc false, because the modem never attempts an ePDG tunnel and a newer
   modem build will not load. A toggle that appears and then fails every time is worse than none.
+- **0032 let the Connectivity Engine read its own configuration** — CNE tells the RIL which data
+  technology to prefer and is the only path by which IWLAN becomes a candidate at all. It could not
+  read one of its own `persist.cne.*` properties; the measured result was `pref data tech` moving from
+  `UNKNOWN` to `LTE`.
+- **0033 finish the CNE property access** — `CNEService` reads the same properties `cnd` does, and
+  giving them their own type moved them out of its reach too, so the framework half of CNE lost access
+  that relabelling was never meant to take. Same rule, same type. The app is hosted in the
+  `.dataservices` process, which is why it does not show up as "cne" in `ps` and is easy to believe
+  dead. `persist.vendor.cnd.iwlan` is set here, worth doing only now that CNE can read that space.
+- **0034 label the properties fifteen denials were actually asking for** — fifteen avc denials on
+  property reads across ten domains. A denial names the domain and the type but never the property, so
+  it read as fifteen separate bugs; labelling the prefixes fixed them as one.
 - **0035 grant the two boot denials that can be expressed, explain the two that cannot** —
   `robinled_app` traversing `/data` (search only, no listing and no read of anything inside), and
   `ueventd` reading `/proc/device-tree/compatible`, given its own type and `genfscon` rather than

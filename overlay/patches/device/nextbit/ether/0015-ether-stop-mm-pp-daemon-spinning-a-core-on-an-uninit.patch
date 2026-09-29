@@ -41,10 +41,10 @@ so our poll() wins. Attached to libdisp-aba.so, the daemon's first DT_NEEDED ent
  create mode 100644 libshims/ppd_poll/ppd_poll.c
 
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index bf19119..1cfaa4c 100644
+index fae95e7..d9e08ab 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
-@@ -163,6 +163,9 @@ TARGET_LD_SHIM_LIBS := \
+@@ -164,6 +164,9 @@ TARGET_LD_SHIM_LIBS := \
      /system/vendor/lib64/libril-qc-qmi-1.so|libshims_peripheral_client.so \
      /system/vendor/lib64/libmm-abl.so|libshims_powermanager.so
  
