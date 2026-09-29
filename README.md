@@ -107,18 +107,19 @@ Beyond the tuning, this build restores or adds:
 | Camera | captures correctly; front/back switch is immediate |
 | Audio | working |
 | LEDs | rear cluster: notification pulse, charge gauge, boot chase |
+| Flashlight | working — driven through the CCI flash subdev, not the PMIC (`FLASHLIGHT.md`) |
 | LiveDisplay | colour calibration works; monochrome mode has no visible effect |
 | adb | USB (wireless via Developer options, as stock) |
 | Cellular | LTE data, SMS, visual voicemail, VoLTE (verified on T-Mobile US); no Wi-Fi calling or video calling — see *Known issues* |
 
-Branches: `lineage-20.0-volte` (this one; VoLTE works, see `VOLTE-BRINGUP.md`), `lineage-20.0`
-(released, no VoLTE), `lineage-21.0` (in progress), `main` (landing page). This repo's own
-`lineage-18.1` and `lineage-19.1` attempts were never finished and are gone; nothing in them is
-coming forward.
+This repo is 20.0 with VoLTE: branch `lineage-20.0-volte`, plus `main` as the landing page. 21 is
+staged separately in
+[ether-lineage-21.0-volte](https://github.com/TheDBP/ether-lineage-21.0-volte). The earlier
+`ether-lineage` repo is archived; its 18.1 and 19.1 attempts were never finished and nothing in them
+is coming forward.
 
 **20.0 ships first; 21 follows straight after, and 21 is the end of the line.** LineageOS 22 needs a
-kernel of at least 4.19 (`NetBpfLoad` exits on anything older) and the Robin's is 3.10. The scoping
-for 21 is `PLAN.md` on the `lineage-21.0` branch.
+kernel of at least 4.19 (`NetBpfLoad` exits on anything older) and the Robin's is 3.10.
 
 ## The one thing to understand
 
@@ -156,7 +157,7 @@ Android 13 assumes a kernel far newer than 3.10, and each assumption failed diff
 
 ## Installing
 
-Prebuilt images are on the [Releases](https://github.com/TheDBP/ether-lineage/releases) page, as
+Prebuilt images are on the [Releases](https://github.com/TheDBP/ether-lineage-20.0-volte/releases) page, as
 the `libre` preset and, from the same build, `clean`:
 
 - `libre` — LineageOS plus F-Droid, Fulguris, K-9 Mail, KDE Connect, TermOne Plus, ConnectBot,
@@ -228,14 +229,15 @@ behaviour of its own.
 | preset | tag | adds over `clean` |
 |---|---|---|
 | `clean` | `turbo-clean` | nothing — this is the baseline |
-| `libre` | `turbo-libre` | `fdroid`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `connectbot`, `linphone` |
+| `libre` | `turbo-libre` | `fdroid`, `k9`, `kdeconnect`, `nextcloud`, `connectbot` |
 | `robin` | `turbo-robin` | `oem`, `root` |
-| `full` | `turbo` | `fdroid`, `gapps`, `k9`, `termoneplus`, `kdeconnect`, `nextcloud`, `connectbot`, `linphone` |
+| `full` | `turbo` | `gapps`, `fdroid`, `k9`, `kdeconnect`, `nextcloud`, `connectbot` |
+| `stock` | `stock` | synthetic: **not** the shared set. Device patches plus `setup-mobile-data` and nothing else — the smallest thing that boots and works |
 
-Every preset also carries the shared set, which is what makes this build look and behave the way
-it does regardless of which preset you pick:
+Every preset except `stock` also carries the shared set, which is what makes this build look and
+behave the way it does regardless of which preset you pick:
 
-`advanced-restart` `dark-default` `google-feed-off` `home-defaults` `linux` `livedisplay-off` `minimal-home` `nav-icons` `nfc-off` `setupwizard-lineage` `setupwizard-nag-skip` `teal-skin` `teal-wallpaper` `themed-icons`
+`advanced-restart` `dark-default` `google-feed-off` `home-defaults` `linux` `livedisplay-off` `minimal-home` `nav-icons` `setup-mobile-data` `setupwizard-lineage` `setupwizard-nag-skip` `teal-skin` `teal-wallpaper` `themed-icons`
 
 `oem` is in no preset. `EXTRA_OPTIONS` adds an option to whichever preset you build, and every
 option added that way appends its name to the tag:
@@ -273,7 +275,14 @@ work on any device rather than being wired into this tree.
 | `nav-icons` | Nextbit Robin style nav-bar icons, drawn as scalable tintable vectors |
 | `nfc-off` | NFC off by default |
 | `oem` | The manufacturer's own boot animation, wallpapers and sounds, reclaimed from its stock ROM |
-| `root` | Magisk baked into the boot image, so the zip flashes pre-rooted |
+| `root` | Magisk baked into the boot image, so the zip flashes pre-rooted. Pulls in `termoneplus`, since root with no shell on the device is not much use |
+| `openvpn` | OpenVPN for Android as a bundled VPN client |
+| `syncthing-fork` | Syncthing-Fork: continuous file sync between your own devices, no server or account |
+| `nextcloud-core` | The four Nextcloud apps that make the phone a client: Files, Talk, NextPush, DAVx5. Mutually exclusive with `nextcloud`, which already carries them |
+| `setup-mobile-data` | Leave mobile data alone during setup, which older Lineage turns off and never back on |
+| `pong-notification` | Pong as the default notification sound, where LineageOS uses Argon |
+| `bringup` | Diagnostic: adbd from boot with no authorisation prompt, plus persistent logcat, so a build that never reaches the lock screen can still be traced. **Do not distribute an image built with it** |
+| `drm-trace` | Diagnostic: trace whoever disables a DRM plane or CRTC. Its kernel patch needs atomic KMS, which this 3.10 kernel does not have, so on this device it warns and is skipped |
 | `setupwizard-lineage` | Use Lineage SetupWizard over Google's (WITH_GAPPS) |
 | `setupwizard-nag-skip` | Skip recovery/metrics/backup setup pages |
 | `teal-skin` | Teal accent — fixed #009D94 Monet preset seed |
@@ -287,6 +296,8 @@ work on any device rather than being wired into this tree.
 here is a fork: each is a single commit against the upstream tree, replayed on every build, so
 upstream stays upstream and what we changed stays legible. One patch per thing it enables. Each entry
 below: what broke → what the patch does → what it costs.
+
+The device series is ordered in families rather than chronologically, so related work reads together: port and tuning, panel density, device features, modem bring-up, display and camera, wifi and USB, audio, IMS and VoLTE, the IMS capability advertisement, then CNE and the property/denial batches. No patch undoes an earlier one, with one deliberate exception noted on `0030`.
 
 ### `build/make`
 
