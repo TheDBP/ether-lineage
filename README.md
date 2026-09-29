@@ -1,3 +1,10 @@
+> **Archived — moved.** This repo is read-only. The work continues in per-version repos:
+>
+> - **[ether-lineage-20.0-volte](https://github.com/TheDBP/ether-lineage-20.0-volte)** — LineageOS 20.0, VoLTE working. The one to use.
+> - [ether-lineage-21.0-volte](https://github.com/TheDBP/ether-lineage-21.0-volte) — 21.0, staged from the 20.0 series.
+>
+> Kept for the release downloads and history below.
+
 # ether-lineage
 
 LineageOS for the **Nextbit Robin** (`ether`, msm8992 / Snapdragon 808, 2016). `main` carries no
